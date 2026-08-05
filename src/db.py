@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional
@@ -41,6 +42,23 @@ def load_schema() -> str:
 	"""schema/schema.sql 을 읽는다. 이 파일이 스키마의 기준(source of truth)이다."""
 	with open(SCHEMA_PATH, "r", encoding="utf-8") as fp:
 		return fp.read()
+
+
+_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.\-]*://", re.I)
+
+
+def normalize_domain(raw: Optional[str]) -> str:
+	"""도메인 정규화. 소스 적재·중복 판정·릴리즈 url_address 가 모두 이 함수를 쓴다.
+
+	프로토콜과 경로/쿼리/프래그먼트를 떼고 소문자화한다.
+	`www.` 는 **제거하지 않는다**. `www.a.com` 과 `a.com` 을 다른 사이트로 본다.
+	포트는 남긴다.
+	"""
+	value = (raw or "").strip()
+	value = _SCHEME_RE.sub("", value)
+	for sep in ("/", "?", "#"):
+		value = value.split(sep, 1)[0]
+	return value.strip().rstrip(".").lower()
 
 
 # key -> (기본값, 타입, 설명). 웹 /settings 화면이 이 목록을 그대로 폼으로 그린다.

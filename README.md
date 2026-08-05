@@ -139,6 +139,13 @@ API를 쓰지 않고, 콘솔에 열어둔 Claude Code 세션과 **파일로 주�
 소스에서 작업데이터로 전달할 때 **이미 검수완료·제외한 도메인은 자동으로 빠진다.**
 설계 전문은 [DATA_TIERS.md](DATA_TIERS.md).
 
+```bash
+# 소스데이터 — CSV 업로드 후 작업데이터로 전달
+./venv/bin/python run.py source-add data.csv --name "tranco 2026-09"
+./venv/bin/python run.py source-push 2 --dry-run   # 몇 건이 들어갈지 먼저 확인
+./venv/bin/python run.py source-push 2
+```
+
 ## 구조
 
 ```

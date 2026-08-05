@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import sys
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -25,6 +26,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src import classify_rule, db, korean, llm_batch  # noqa: E402
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# 업로드한 CSV 원본 보관. data/ 는 .gitignore 대상이라 저장소에 올라가지 않는다
+UPLOAD_DIR = os.path.join(db.DATA_DIR, "uploads")
 
 app = FastAPI(title="웹사이트 분류 관리")
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
@@ -78,6 +81,16 @@ def page_sites(request: Request):
 		"sites.html",
 		{"request": request, "nav": "sites", "categories": db.CATEGORIES},
 	)
+
+
+@app.get("/sources", response_class=HTMLResponse)
+def page_sources(request: Request):
+	return templates.TemplateResponse("sources.html", {"request": request, "nav": "sources"})
+
+
+@app.get("/releases", response_class=HTMLResponse)
+def page_releases(request: Request):
+	return templates.TemplateResponse("releases.html", {"request": request, "nav": "releases"})
 
 
 # ---------------------------------------------------------------- 진행 상황
@@ -996,6 +1009,205 @@ def api_jobs():
 	with db_conn() as c:
 		rows = c.execute("SELECT * FROM job_runs ORDER BY id DESC LIMIT 20").fetchall()
 		return {"jobs": [dict(r) for r in rows]}
+
+
+# ---------------------------------------------------------------- 소스데이터
+
+class SourceAddIn(BaseModel):
+	path: str
+	name: str
+	has_header: bool = True
+	domain_col: Optional[int] = None
+	rank_col: Optional[int] = None
+	note: Optional[str] = None
+
+
+@app.get("/api/sources")
+def api_sources():
+	with db_conn() as c:
+		db.init_schema(c)
+		rows = c.execute("SELECT * FROM source_datasets ORDER BY id").fetchall()
+		out = []
+		for r in rows:
+			item = dict(r)
+			item["column_map"] = db.json_loads(r["column_map"], {})
+			# 아직 전달하지 않은 도메인이 몇 건인지 목록에서 바로 보이게 한다
+			item["pending_new"] = c.execute(
+				"""SELECT COUNT(DISTINCT s.domain) FROM %s s
+				   WHERE s.domain != ''
+				     AND NOT EXISTS (SELECT 1 FROM sites x WHERE x.domain = s.domain)
+				     AND NOT EXISTS (SELECT 1 FROM review_status v WHERE v.domain = s.domain)"""
+				% r["table_name"]).fetchone()[0]
+			out.append(item)
+	return {"sources": out}
+
+
+@app.post("/api/sources/upload")
+async def api_source_upload(file: UploadFile = File(...), has_header: bool = Form(True)):
+	"""CSV 를 받아 두고 헤더 추정 결과를 돌려준다. 아직 등록하지는 않는다.
+
+	등록은 사용자가 컬럼 매핑을 확인한 뒤 POST /api/sources 로 한다.
+	"""
+	from src import source
+
+	os.makedirs(UPLOAD_DIR, exist_ok=True)
+	safe = re.sub(r"[^0-9A-Za-z._-]+", "_", os.path.basename(file.filename or "upload.csv"))
+	dest = os.path.join(UPLOAD_DIR, "%s-%s" % (datetime.now().strftime("%Y%m%d-%H%M%S"), safe))
+	size = 0
+	with open(dest, "wb") as fp:
+		while True:
+			chunk = await file.read(1 << 20)
+			if not chunk:
+				break
+			size += len(chunk)
+			fp.write(chunk)
+
+	try:
+		info = source.sniff(dest, has_header=has_header)
+	except (OSError, ValueError, UnicodeDecodeError) as exc:
+		os.remove(dest)
+		raise HTTPException(400, "CSV 를 읽을 수 없습니다: %s" % exc)
+	info["path"] = dest
+	info["filename"] = file.filename
+	info["size"] = size
+	return info
+
+
+@app.get("/api/sources/sniff")
+def api_source_sniff(path: str, has_header: bool = True):
+	"""업로드 전에 헤더를 읽어 컬럼 역할을 추정한다. DB 는 건드리지 않는다."""
+	from src import source
+
+	try:
+		return source.sniff(path, has_header=has_header)
+	except (OSError, ValueError) as exc:
+		raise HTTPException(400, str(exc))
+
+
+@app.post("/api/sources")
+def api_source_add(payload: SourceAddIn):
+	from src import source
+
+	try:
+		return source.add(payload.path, payload.name, has_header=payload.has_header,
+		                  domain_col=payload.domain_col, rank_col=payload.rank_col,
+		                  note=payload.note, quiet=True)
+	except (OSError, ValueError) as exc:
+		raise HTTPException(400, str(exc))
+
+
+@app.get("/api/sources/{source_id}/preview")
+def api_source_preview(source_id: int, limit: int = Query(20, le=200)):
+	from src import source
+
+	try:
+		out = source.preview(source_id, limit=limit)
+	except ValueError as exc:
+		raise HTTPException(404, str(exc))
+	return {"source": dict(out["source"]), "rows": [dict(r) for r in out["rows"]]}
+
+
+@app.post("/api/sources/{source_id}/push")
+def api_source_push(source_id: int, dry_run: bool = False):
+	from src import source
+
+	if not dry_run and _busy():
+		raise HTTPException(409, "다른 작업이 실행 중입니다. 끝난 뒤에 다시 시도하세요.")
+	try:
+		return source.push(source_id, dry_run=dry_run)
+	except ValueError as exc:
+		raise HTTPException(400, str(exc))
+
+
+# ---------------------------------------------------------------- 릴리즈
+
+class ReleaseCreateIn(BaseModel):
+	version: str
+	note: Optional[str] = None
+	skip_uncategorized: bool = False
+	replace: bool = False
+
+
+@app.get("/api/releases")
+def api_releases():
+	with db_conn() as c:
+		db.init_schema(c)
+		rows = c.execute("SELECT * FROM releases ORDER BY id DESC").fetchall()
+		out = []
+		for r in rows:
+			item = dict(r)
+			item["by_category"] = [
+				dict(x) for x in c.execute(
+					"""SELECT category, ranky_category, COUNT(*) AS count
+					   FROM %s GROUP BY category ORDER BY category""" % r["table_name"])
+			]
+			out.append(item)
+	return {"releases": out}
+
+
+@app.get("/api/releases/preview")
+def api_release_preview(skip_uncategorized: bool = False):
+	"""지금 만들면 몇 건이 나오는지 집계한다. DB 에 쓰지 않는다."""
+	from src import release
+
+	with db_conn() as c:
+		db.init_schema(c)
+		built = release.build_rows(c, skip_uncategorized=skip_uncategorized)
+	return {
+		"candidates": built["candidates"],
+		"uncategorized": built["uncategorized"],
+		"skipped_uncategorized": built["skipped_uncategorized"],
+		"collisions": built["collisions"],
+		"count": len(built["rows"]),
+		"sample": [{k: v for k, v in r.items() if not k.startswith("_")}
+		           for r in built["rows"][:20]],
+	}
+
+
+@app.post("/api/releases")
+def api_release_create(payload: ReleaseCreateIn):
+	from src import release
+
+	if _busy():
+		raise HTTPException(409, "다른 작업이 실행 중입니다. 끝난 뒤에 다시 시도하세요.")
+	try:
+		built = release.create(payload.version, note=payload.note,
+		                       skip_uncategorized=payload.skip_uncategorized,
+		                       replace=payload.replace)
+	except ValueError as exc:
+		raise HTTPException(400, str(exc))
+	return {"version": built["version"], "table": built["table"], "count": built["count"],
+	        "uncategorized": built["uncategorized"], "collisions": built["collisions"]}
+
+
+@app.get("/api/releases/{version}/rows")
+def api_release_rows(version: str, limit: int = Query(50, le=500), offset: int = 0):
+	from src import release
+
+	with db_conn() as c:
+		db.init_schema(c)
+		rel = c.execute("SELECT * FROM releases WHERE version = ?", (version,)).fetchone()
+		if rel is None:
+			raise HTTPException(404, "그런 릴리즈가 없습니다: %s" % version)
+		rows = c.execute(
+			"""SELECT r.*, m.domain, m.method FROM {t} r
+			   LEFT JOIN {t}_map m ON m.pno = r.pno
+			   ORDER BY r.pno LIMIT ? OFFSET ?""".format(t=rel["table_name"]),
+			(limit, offset)).fetchall()
+	return {"total": rel["row_count"], "rows": [dict(r) for r in rows]}
+
+
+@app.post("/api/releases/{version}/export")
+def api_release_export(version: str):
+	from src import release
+
+	try:
+		result = release.export(version)
+	except ValueError as exc:
+		raise HTTPException(404, str(exc))
+	return {"version": result["version"], "count": result["count"],
+	        "csv": os.path.relpath(result["csv"], db.PROJECT_ROOT),
+	        "sql": os.path.relpath(result["sql"], db.PROJECT_ROOT)}
 
 
 @app.exception_handler(HTTPException)

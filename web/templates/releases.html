@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}릴리즈{% endblock %}
+
+{% block content %}
+<div class="hint">
+	<b>검수완료</b>로 표시한 사이트만 모아 버전 스냅샷으로 고정합니다. 제외한 사이트는 들어가지 않습니다.
+	테이블 모양은 PCFILTER 제품의 <code>default_website_t</code> 를 그대로 따릅니다.
+	매 버전이 <b>전량 스냅샷</b>이라 버전이 늘어도 서로 간섭하지 않습니다.
+</div>
+
+<div class="card">
+	<h2>새 릴리즈</h2>
+	<div class="row">
+		<label>버전 <input id="version" style="width:140px" placeholder="v1.0.1"></label>
+		<label>메모 <input id="note" style="width:320px"></label>
+		<label class="chk"><input type="checkbox" id="skip-uncat"> 미분류 제외</label>
+	</div>
+	<div class="row" style="margin-top:12px">
+		<button id="btn-preview">미리보기</button>
+		<button id="btn-create" class="primary">고정</button>
+	</div>
+	<div class="sub" style="margin-top:8px">
+		미분류(검수는 끝났는데 카테고리가 없는 사이트)는 기본적으로 <b>기타(10)</b> 로 들어갑니다.
+		미리보기는 집계만 하고 DB에 쓰지 않습니다.
+	</div>
+	<div id="preview-box" style="display:none; margin-top:14px; border-top:1px solid var(--line); padding-top:14px"></div>
+</div>
+
+<div class="card" style="margin-top:16px">
+	<h2>릴리즈 목록</h2>
+	<table>
+		<thead>
+			<tr><th>버전</th><th>상태</th><th class="num">행수</th><th>고정 시각</th>
+				<th>카테고리</th><th></th></tr>
+		</thead>
+		<tbody id="rows"></tbody>
+	</table>
+</div>
+
+<div class="card" style="margin-top:16px; display:none" id="rows-card">
+	<h2 id="rows-title">내용</h2>
+	<table>
+		<thead>
+			<tr><th class="num">pno</th><th>hash_id</th><th>url_address</th><th>site_name</th>
+				<th class="num">cat</th><th>ranky</th><th class="num">block</th><th>flag</th><th>분류방식</th></tr>
+		</thead>
+		<tbody id="release-rows"></tbody>
+	</table>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+	function collisionHtml(list) {
+		if (!list.length) return '<div>hash_id 충돌 <b>0건</b></div>';
+		const items = list.slice(0, 10).map(c =>
+			`<div class="sub mono">${escapeHtml(c.kept)} 남김 / ${escapeHtml(c.dropped.join(', '))} 버림</div>`).join('');
+		const more = list.length > 10 ? `<div class="sub">... 외 ${nf.format(list.length - 10)}건</div>` : '';
+		return `<div>hash_id 충돌 <b>${nf.format(list.length)}건</b> — www 없는 쪽을 남깁니다</div>${items}${more}`;
+	}
+
+	document.getElementById('btn-preview').onclick = async () => {
+		const skip = document.getElementById('skip-uncat').checked;
+		try {
+			const p = await api('/api/releases/preview?skip_uncategorized=' + skip);
+			const sample = p.sample.map(r =>
+				`<tr><td class="mono sub">${escapeHtml(r.hash_id)}</td>
+				 <td>${escapeHtml(r.url_address)}</td><td>${escapeHtml(r.site_name || '')}</td>
+				 <td class="num">${r.category}</td><td>${escapeHtml(r.ranky_category || '')}</td></tr>`).join('');
+			document.getElementById('preview-box').innerHTML = `
+				<div>검수완료 대상 <b>${nf.format(p.candidates)}</b>건 ·
+					 미분류 <b>${nf.format(p.uncategorized)}</b>건${p.skipped_uncategorized ? ' (제외됨)' : " → '기타'(10)"} ·
+					 최종 <b>${nf.format(p.count)}</b>행</div>
+				${collisionHtml(p.collisions)}
+				<table style="margin-top:10px">
+					<thead><tr><th>hash_id</th><th>url_address</th><th>site_name</th><th>cat</th><th>ranky</th></tr></thead>
+					<tbody>${sample}</tbody></table>
+				<div class="sub">앞 ${p.sample.length}행만 표시</div>`;
+			document.getElementById('preview-box').style.display = '';
+		} catch (e) { toast(e.message, true); }
+	};
+
+	document.getElementById('btn-create').onclick = async () => {
+		const version = document.getElementById('version').value.trim();
+		if (!version) { toast('버전 이름이 필요합니다.', true); return; }
+		if (!confirm(`릴리즈 ${version} 을 고정합니다. 계속할까요?`)) return;
+		const btn = document.getElementById('btn-create');
+		btn.disabled = true;
+		try {
+			const r = await api('/api/releases', {
+				method: 'POST',
+				body: JSON.stringify({
+					version,
+					note: document.getElementById('note').value.trim() || null,
+					skip_uncategorized: document.getElementById('skip-uncat').checked,
+					replace: false
+				})
+			});
+			toast(`릴리즈 ${r.version} 고정 완료 — ${nf.format(r.count)}행`);
+			load();
+		} catch (e) { toast(e.message, true); }
+		finally { btn.disabled = false; }
+	};
+
+	function catSummary(list) {
+		return list.map(c => `${escapeHtml(c.ranky_category)} ${nf.format(c.count)}`).join(' · ');
+	}
+
+	function rowHtml(r) {
+		return `<tr>
+			<td><b>${escapeHtml(r.version)}</b><div class="sub">${escapeHtml(r.note || '')}</div></td>
+			<td>${escapeHtml(r.status)}</td>
+			<td class="num">${nf.format(r.row_count)}</td>
+			<td class="sub">${escapeHtml(r.fixed_at || '-')}</td>
+			<td class="sub">${catSummary(r.by_category)}</td>
+			<td class="row">
+				<button data-rows="${escapeHtml(r.version)}">내용</button>
+				<button data-export="${escapeHtml(r.version)}" class="primary">내보내기</button>
+			</td>
+		</tr>`;
+	}
+
+	async function load() {
+		const r = await api('/api/releases');
+		document.getElementById('rows').innerHTML = r.releases.length
+			? r.releases.map(rowHtml).join('')
+			: '<tr><td colspan="6" class="sub">릴리즈가 없습니다.</td></tr>';
+
+		document.querySelectorAll('[data-rows]').forEach(b => b.onclick = async () => {
+			try {
+				const d = await api('/api/releases/' + encodeURIComponent(b.dataset.rows) + '/rows?limit=100');
+				document.getElementById('rows-title').textContent =
+					`${b.dataset.rows} — ${nf.format(d.total)}행 중 앞 ${d.rows.length}행`;
+				document.getElementById('release-rows').innerHTML = d.rows.map(x =>
+					`<tr><td class="num">${x.pno}</td>
+					 <td class="mono sub">${escapeHtml(x.hash_id)}</td>
+					 <td>${escapeHtml(x.url_address)}</td>
+					 <td>${escapeHtml(x.site_name || '')}</td>
+					 <td class="num">${x.category == null ? '' : x.category}</td>
+					 <td>${escapeHtml(x.ranky_category || '')}</td>
+					 <td class="num">${x.block}</td><td>${escapeHtml(x.flag)}</td>
+					 <td class="sub">${escapeHtml(x.method || '')}</td></tr>`).join('');
+				document.getElementById('rows-card').style.display = '';
+			} catch (e) { toast(e.message, true); }
+		});
+
+		document.querySelectorAll('[data-export]').forEach(b => b.onclick = async () => {
+			b.disabled = true;
+			try {
+				const d = await api('/api/releases/' + encodeURIComponent(b.dataset.export) + '/export',
+					{ method: 'POST' });
+				toast(`${nf.format(d.count)}행 생성 — ${d.csv} / ${d.sql}`);
+			} catch (e) { toast(e.message, true); }
+			finally { b.disabled = false; }
+		});
+	}
+
+	load();
+</script>
+{% endblock %}

@@ -118,18 +118,103 @@ def cmd_export(args: argparse.Namespace) -> None:
 	export.run_export(reviewed_only=args.reviewed_only)
 
 
+def cmd_source_add(args: argparse.Namespace) -> None:
+	from src import source
+
+	if args.sniff:
+		info = source.sniff(args.csv, has_header=not args.no_header)
+		print("열 %d개" % info["columns"])
+		for i, h in enumerate(info["header"]):
+			role = [k for k, v in info["detected"].items() if v == i]
+			print("  %d: %-20s %s" % (i, h, ("← %s 추정" % role[0]) if role else ""))
+		print("\n미리보기")
+		for row in info["sample"]:
+			print("  %s" % row)
+		return
+
+	r = source.add(args.csv, args.name, has_header=not args.no_header,
+	               domain_col=args.domain_col, rank_col=args.rank_col, note=args.note)
+	print("소스 #%d '%s' 등록 완료 → 테이블 %s" % (r["id"], r["name"], r["table"]))
+	print("  적재       {:,}행 (고유 도메인 {:,})".format(r["loaded"], r["distinct"]))
+	if r["skipped"]:
+		print("  건너뜀     {:,}행 (도메인 없음)".format(r["skipped"]))
+	print("  컬럼       domain={} rank={}".format(r["domain_col"], r["rank_col"]))
+	print("\n전달: python run.py source-push %d --dry-run" % r["id"])
+
+
+def cmd_source_list(args: argparse.Namespace) -> None:
+	from src import source
+
+	rows = source.list_sources()
+	if not rows:
+		print("소스가 없습니다. `run.py source-add <csv> --name \"이름\"` 으로 등록하세요.")
+		return
+	print("{:>3}  {:<24} {:>10} {:>10}  {:<19} {}".format(
+		"ID", "이름", "행수", "전달", "업로드", "메모"))
+	for r in rows:
+		print("{:>3}  {:<24} {:>10,} {:>10,}  {:<19} {}".format(
+			r["id"], r["name"], r["row_count"], r["pushed_count"],
+			r["uploaded_at"] or "-", r["note"] or ""))
+
+
+def cmd_source_preview(args: argparse.Namespace) -> None:
+	from src import source
+
+	out = source.preview(args.id, limit=args.limit)
+	src = out["source"]
+	print("소스 #%d '%s' (%s, %s행)" % (
+		src["id"], src["name"], src["table_name"], format(src["row_count"], ",")))
+	for r in out["rows"]:
+		print("  {:>8}  {:<32} {}".format(
+			r["source_rank"] if r["source_rank"] is not None else "-",
+			r["domain"], (r["raw"] or "")[:80]))
+
+
+def _pad(label: str, width: int = 20) -> str:
+	"""한글은 터미널에서 두 칸을 차지한다. str.format 의 :<n 은 그걸 모른다."""
+	visual = sum(2 if ord(ch) > 0x2E80 else 1 for ch in label)
+	return label + " " * max(1, width - visual)
+
+
+def _line(label: str, value: int, unit: str = "건") -> None:
+	print("  {}{:>9,}{}".format(_pad(label), value, unit))
+
+
+def _print_push_summary(r: dict) -> None:
+	_line("소스 고유 도메인", r["distinct"])
+	_line("신규 추가", r["added"] if not r["dry_run"] else r["new"])
+	_line("검수완료 자동 예외", r["reviewed"])
+	_line("제외 자동 예외", r["excluded"])
+	_line("이미 작업 중", r["existing"])
+	if r["dry_run"]:
+		_line("출처 소급 연결 가능", r["linkable"])
+	else:
+		_line("출처 소급 연결", r["linked"])
+
+
+def cmd_source_push(args: argparse.Namespace) -> None:
+	from src import source
+
+	r = source.push(args.id, dry_run=args.dry_run)
+	head = "[미리보기] " if args.dry_run else ""
+	print("%s소스 #%d '%s' → 작업데이터" % (head, r["id"], r["name"]))
+	_print_push_summary(r)
+	if args.dry_run:
+		print("\nDB에 아무것도 쓰지 않았습니다. 실행: python run.py source-push %d" % args.id)
+
+
 def _print_release_summary(built: dict) -> None:
-	print("  검수완료 대상   {:,}건".format(built["candidates"]))
-	print("  그중 미분류     {:,}건 → '기타'(10)".format(built["uncategorized"]))
+	_line("검수완료 대상", built["candidates"])
+	_line("그중 미분류", built["uncategorized"])
 	if built["skipped_uncategorized"]:
 		print("    ↳ --skip-uncategorized 로 {:,}건 제외".format(built["skipped_uncategorized"]))
 	collisions = built["collisions"]
-	print("  hash_id 충돌    {:,}건".format(len(collisions)))
+	_line("hash_id 충돌", len(collisions))
 	for c in collisions[:10]:
 		print("    {} 남김 / {} 버림".format(c["kept"], ", ".join(c["dropped"])))
 	if len(collisions) > 10:
 		print("    ... 외 {:,}건".format(len(collisions) - 10))
-	print("  최종            {:,}행".format(len(built["rows"])))
+	_line("최종", len(built["rows"]), "행")
 
 
 def cmd_release_create(args: argparse.Namespace) -> None:
@@ -308,6 +393,29 @@ def main() -> None:
 	p.add_argument("--reviewed-only", action="store_true",
 	               help="검수완료로 표시한 사이트만 out/reviewed/ 에 생성")
 	p.set_defaults(func=cmd_export)
+
+	p = sub.add_parser("source-add", help="CSV를 소스데이터로 등록 (작업데이터는 건드리지 않음)")
+	p.add_argument("csv", help="CSV 경로")
+	p.add_argument("--name", required=True, help="소스 이름 (예: 'tranco top-1m 2026-08')")
+	p.add_argument("--no-header", action="store_true", help="1행이 헤더가 아님")
+	p.add_argument("--domain-col", type=int, default=None, help="도메인 열 번호 (0부터)")
+	p.add_argument("--rank-col", type=int, default=None, help="순위 열 번호 (0부터)")
+	p.add_argument("--note", help="메모")
+	p.add_argument("--sniff", action="store_true", help="헤더 추정 결과만 보고 끝내기")
+	p.set_defaults(func=cmd_source_add)
+
+	p = sub.add_parser("source-list", help="소스데이터 목록")
+	p.set_defaults(func=cmd_source_list)
+
+	p = sub.add_parser("source-preview", help="소스데이터 내용 미리보기")
+	p.add_argument("id", type=int, help="소스 ID")
+	p.add_argument("--limit", type=int, default=10)
+	p.set_defaults(func=cmd_source_preview)
+
+	p = sub.add_parser("source-push", help="소스데이터를 작업데이터로 전달")
+	p.add_argument("id", type=int, help="소스 ID")
+	p.add_argument("--dry-run", action="store_true", help="집계만 하고 DB에 쓰지 않기")
+	p.set_defaults(func=cmd_source_push)
 
 	p = sub.add_parser("release-create", help="검수완료분을 버전 스냅샷으로 고정")
 	p.add_argument("version", help="버전 이름 (예: v1.0.0)")

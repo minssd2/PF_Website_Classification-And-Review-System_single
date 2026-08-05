@@ -627,6 +627,56 @@ print('판정·분류 결과 초기화 (크롤링 데이터는 유지)')
 
 ---
 
+## 8-0. 소스데이터 — 새 CSV 를 작업 대상으로 넣기
+
+수집 대상을 늘릴 때 쓴다. CSV 를 **소스데이터**로 등록하고, 거기서 **작업데이터로 전달**하면
+수집·판정·검수 대상이 된다. 원본은 소스 테이블에 그대로 남으므로 몇 번이든 다시 볼 수 있다.
+
+### 웹에서
+
+`소스데이터` 화면 → 파일 선택 → **파일 읽기** → 컬럼 확인 → **소스로 등록** → **전달**
+
+파일을 읽으면 헤더에서 도메인·순위 컬럼을 자동으로 찾아 보여준다. 못 찾으면 열 번호를
+직접 넣으면 된다. 등록만으로는 작업데이터가 바뀌지 않는다. **전달**을 눌러야 반영된다.
+누르기 전에 **전달 확인**으로 몇 건이 들어갈지 먼저 볼 수 있다.
+
+### 콘솔에서
+
+```bash
+# 헤더 추정 결과만 보기
+./venv/bin/python run.py source-add data.csv --name "확인용" --sniff
+
+# 등록 (헤더 자동 인식)
+./venv/bin/python run.py source-add data.csv --name "tranco 2026-09"
+
+# 헤더가 없는 CSV 는 열 번호를 직접 준다 (top-1m.csv 가 그렇다)
+./venv/bin/python run.py source-add top-1m.csv --name "tranco top-1m" \
+    --no-header --domain-col 1 --rank-col 0
+
+./venv/bin/python run.py source-list
+./venv/bin/python run.py source-preview 1
+./venv/bin/python run.py source-push 1 --dry-run
+./venv/bin/python run.py source-push 1
+```
+
+### 전달할 때 무엇이 빠지는가
+
+```
+소스 고유 도메인    1,000,000건
+신규 추가                   0건   ← 작업데이터에 새로 들어간 것
+검수완료 자동 예외        404건   ← 이미 검수한 것은 다시 안 넣는다
+제외 자동 예외          1,252건   ← 제외한 것도 마찬가지
+이미 작업 중          998,344건
+출처 소급 연결      1,000,000건   ← 출처가 비어 있던 행에 이 소스를 표시
+```
+
+**한 번 검수하거나 제외한 도메인은 다시 올라오지 않는다.** 같은 CSV 를 여러 번 전달해도
+안전하다. 이미 있는 도메인은 건드리지 않는다.
+
+**출처 소급 연결**은 작업데이터에 이미 있는데 어느 소스에서 왔는지 기록이 없는 행에
+출처를 채우는 것이다. 기존 100만 행이 여기 해당했다. 웹에서 손으로 추가한 47건은
+어느 CSV 에도 없으므로 출처가 빈 채로 남는다.
+
 ## 8-1. 릴리즈 — PCFILTER 로 넘길 데이터 만들기
 
 검수완료(`reviewed`)로 표시한 사이트만 모아 **버전 스냅샷**으로 고정하고,
@@ -702,10 +752,14 @@ PCFILTER 제품의 `default_website_t` 형식으로 내보낸다.
 | `llm-status` | 배치 진행 상황 | 진행 상황 화면 | | 즉시 |
 | `export` | 최종 산출물 생성 | 전체 산출물 생성 | | 수십 초 |
 | `export --reviewed-only` | 검수완료분만 생성 | 검수완료분만 생성 | | 수십 초 |
-| `release-create <버전>` | 검수완료분을 버전 스냅샷으로 고정 | — | | 즉시 |
-| `release-create --dry-run` | 집계만, DB 안 건드림 | — | | 즉시 |
-| `release-export <버전>` | CSV + INSERT문 생성 | — | | 즉시 |
-| `release-list` | 릴리즈 목록 | — | | 즉시 |
+| `source-add <csv>` | CSV를 소스데이터로 등록 | 소스데이터 화면 | | 100만행 15초 |
+| `source-list` | 소스 목록 | 소스데이터 화면 | | 즉시 |
+| `source-preview <id>` | 소스 내용 미리보기 | 미리보기 | | 즉시 |
+| `source-push <id>` | 작업데이터로 전달 | 전달 | | 100만행 5초 |
+| `release-create <버전>` | 검수완료분을 버전 스냅샷으로 고정 | 고정 | | 즉시 |
+| `release-create --dry-run` | 집계만, DB 안 건드림 | 미리보기 | | 즉시 |
+| `release-export <버전>` | CSV + INSERT문 생성 | 내보내기 | | 즉시 |
+| `release-list` | 릴리즈 목록 | 릴리즈 화면 | | 즉시 |
 | `status` | 전체 진행 상황 요약 | 진행 상황 화면 | | 즉시 |
 | `web [--port N]` | 관리 UI 실행 | — | | — |
 

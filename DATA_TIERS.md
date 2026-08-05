@@ -69,8 +69,12 @@ src_0001_tranco_top1m(id, domain, source_rank, raw)
 
 ### 기존 top-1m 소급 등록
 
-`top-1m.csv` 를 다시 읽지 않는다. 이미 `sites` 에 있는 100만 행에서 역으로 만든다.
-파일을 다시 읽으면 그동안 웹 UI 로 추가한 사이트(`aws.amazon.com` 등)가 누락된다.
+**원본 `top-1m.csv` 를 읽어서 만든다.** 소스데이터는 "업로드한 원본"이므로 CSV 그대로가
+맞다. `sites` 에서 역으로 만들면 웹 UI 로 추가한 사이트(`aws.amazon.com` 등)까지
+tranco 소스에 섞여 출처가 틀리게 된다.
+
+실제 수치: CSV 1,000,000행 / `sites` 1,000,047행. 차이 **47건은 웹에서 수동 추가한 것**이라
+소스에 넣지 않고 `source_id = NULL` 로 남긴다. 출처가 없다는 뜻이다.
 
 ---
 
@@ -86,13 +90,25 @@ src_0001_tranco_top1m(id, domain, source_rank, raw)
 전달 후 리포트:
 
 ```
-신규        N건  → sites 에 pending 으로 추가
-중복        M건  → 이미 작업 중
-검수완료    K건  → 자동 예외
-제외        L건  → 자동 예외
+소스 고유 도메인    소스 테이블의 중복 제거 건수
+신규 추가           sites 에 pending 으로 들어간 건수
+검수완료 자동 예외  reviewed 라 건너뛴 건수
+제외 자동 예외      excluded 라 건너뛴 건수
+이미 작업 중        검수 이력 없이 이미 sites 에 있는 건수
+출처 소급 연결      이미 있는데 출처가 비어 있어 이 소스로 표시한 건수
 ```
 
 릴리즈된 도메인은 모두 `reviewed` 상태이므로 자동 예외에 이미 걸린다. 별도 처리가 필요 없다.
+
+**검수 이력 필터는 `sites` 존재 여부와 겹친다.** `review_status` 에 있는 도메인은
+어차피 `sites` 에도 있기 때문이다. 그래도 SQL 에 조건을 따로 둔다. 나중에 작업데이터를
+정리하는 기능이 생겨도 검수한 도메인이 되살아나지 않게 하려는 방어다.
+
+### 출처 소급 연결
+
+이미 작업데이터에 있는데 `source_id` 가 비어 있는 행은 이 소스로 연결한다.
+100만 행이 그렇게 소스 #1 에 붙었다. `source_rank` 도 함께 채운다.
+이미 다른 소스로 표시된 행은 건드리지 않는다.
 
 ### 도메인 정규화
 
@@ -281,19 +297,28 @@ VALUES
 | `/sites` (기존) | 작업데이터. 출처 소스 필터 추가 |
 | `/releases` (신규) | 릴리즈 생성, 버전 목록, 미리보기, 내보내기 |
 
+웹 업로드는 2단계다. ① 파일을 받아 헤더 추정 결과를 보여주고 ② 사용자가 컬럼 매핑을
+확인한 뒤 등록한다. 업로드 원본은 `data/uploads/` 에 시각을 붙여 남긴다.
+
 ### CLI
 
 ```bash
 # 소스데이터
 run.py source-add <csv> --name "tranco 2026-08"    # 헤더 자동 인식
+run.py source-add <csv> --name "..." --sniff       # 추정 결과만 보기
+run.py source-add <csv> --name "..." --no-header --domain-col 1 --rank-col 0
 run.py source-list
-run.py source-push <source-id>                     # 작업데이터로 전달
+run.py source-preview <id>
+run.py source-push <id> [--dry-run]                # 작업데이터로 전달
 
 # 릴리즈데이터
-run.py release-create v1.0.0 [--skip-uncategorized]
+run.py release-create v1.0.0 [--dry-run] [--skip-uncategorized] [--replace]
 run.py release-list
 run.py release-export v1.0.0                       # CSV + SQL 동시 생성
 ```
+
+테이블 이름은 `src_%04d_{슬러그}` 다. 한글 이름은 슬러그에서 다 깎이므로 알파벳이
+하나도 안 남으면 `data` 로 떨어진다 (`src_0002_data`).
 
 ---
 
@@ -308,15 +333,19 @@ run.py release-export v1.0.0                       # CSV + SQL 동시 생성
 | 1 | `schema.sql` 을 `db.py` 가 읽도록 배선. `releases`·`category_codes` 생성 | 완료 |
 | 2 | `src/release.py` — hash_id 계산, 스냅샷 생성, 중복 제거 | 완료 |
 | 3 | 릴리즈 내보내기 (CSV + INSERT) | 완료 |
-| 5 | `sites` 에 `source_id`·`source_rank`·`added_at` 추가 | 완료 (컬럼만) |
-| 4 | `/releases` 화면 | 예정 |
-| 6 | `src/source.py` — 업로드, 소스별 테이블 생성, `/sources` 화면 | 예정 |
-| 7 | 전달 기능 (자동 예외 포함) | 예정 (6 필요) |
-| 8 | top-1m 을 `src_0001` 로 소급 등록 | 예정 (7 필요) |
+| 4 | `/releases` 화면 | 완료 |
+| 5 | `sites` 에 `source_id`·`source_rank`·`added_at` 추가 | 완료 |
+| 6 | `src/source.py` — 업로드, 소스별 테이블 생성, `/sources` 화면 | 완료 |
+| 7 | 전달 기능 (자동 예외 포함) | 완료 |
+| 8 | top-1m 을 `src_0001` 로 소급 등록 | 완료 |
 | 9 | 스냅샷 간 비교 | 예정 |
 
 **v1.0.0 릴리즈 완료** — 2026-08-05, 검수완료 450건. hash_id 충돌 0건,
 미분류 2건은 `기타`(10)로 들어갔다.
+
+**소스 #1 등록 완료** — `src_0001_tranco_top_1m` 100만 행. 작업데이터 100만 행에
+출처를 소급 연결했고, 웹에서 수동 추가한 47건은 `source_id = NULL` 로 남았다.
+DB 크기는 245MB → 355MB 로 늘었다(원본 행 JSON 보관분).
 
 `init_schema()` 는 기존 DB 에서 **컬럼 추가를 먼저** 하고 `schema.sql` 을 돌린다.
 `idx_sites_source` 같은 인덱스가 새 컬럼을 참조하기 때문에 순서가 뒤바뀌면 거기서 죽는다.
@@ -331,7 +360,8 @@ run.py release-export v1.0.0                       # CSV + SQL 동시 생성
 | `생성형AI` 표기 | `ranky_category` 표기 | 확정 — 내부 이름 그대로 |
 | 포트 처리 | `example.com:8443` 의 hash_id 입력 | 미확정. 현재 데이터에 포트 없어 막지 않음 |
 | 전달 방식 | 릴리즈 파일을 PCFILTER 쪽에 넘기는 방법 | 미확정. 수동 적재로 가정 |
-| 도메인 정규화 | 소스 전달 시 `www.` 를 다른 사이트로 볼지 | 미확정. 6단계 전까지 필요 |
+| 도메인 정규화 | 소스 전달 시 `www.` 를 다른 사이트로 볼지 | 확정 — 다른 사이트로 본다 (`db.normalize_domain`) |
+| 소스 삭제 | 소스와 그 테이블을 지우는 기능 | 미구현. 지우면 `sites.source_id` 가 붕 뜬다 |
 
 ---
 

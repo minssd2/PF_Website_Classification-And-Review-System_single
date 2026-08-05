@@ -31,8 +31,6 @@ PCF_FLAG = "0"
 
 SQL_CHUNK = 1000  # INSERT 문 하나에 넣을 행 수. 대용량 적재 시 실패 지점을 좁힌다
 
-_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.\-]*://", re.I)
-
 
 # ---------------------------------------------------------------- 정규화 / 해시
 
@@ -40,12 +38,9 @@ def url_address(raw: str) -> str:
 	"""PCFILTER `url_address` 형식으로 정규화한다.
 
 	프로토콜과 SubURL(경로·쿼리·프래그먼트)을 뗀다. `www.` 와 포트는 남긴다.
+	소스 적재·중복 판정과 같은 규칙을 써야 하므로 db.normalize_domain 을 그대로 쓴다.
 	"""
-	value = (raw or "").strip()
-	value = _SCHEME_RE.sub("", value)
-	for sep in ("/", "?", "#"):
-		value = value.split(sep, 1)[0]
-	return value.strip().rstrip(".").lower()
+	return db.normalize_domain(raw)
 
 
 def hash_source(addr: str) -> str:

@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block title %}소스데이터{% endblock %}
+
+{% block content %}
+<div class="hint">
+	업로드한 CSV 원본입니다. 업로드마다 <b>별도 테이블</b>로 보관하고, 여기서
+	<b>작업데이터로 전달</b>하면 수집·판정·검수 대상이 됩니다.
+	이미 <b>검수완료·제외</b>한 도메인은 전달할 때 자동으로 빠집니다.
+</div>
+
+<div class="card">
+	<h2>CSV 업로드</h2>
+	<div class="row">
+		<input type="file" id="file" accept=".csv,text/csv">
+		<label class="chk"><input type="checkbox" id="has-header" checked> 1행이 헤더</label>
+		<button id="btn-sniff" class="primary">파일 읽기</button>
+	</div>
+	<div class="sub" style="margin-top:8px">
+		헤더에서 도메인·순위 컬럼을 자동으로 찾습니다. 못 찾으면 직접 지정할 수 있습니다.
+	</div>
+
+	<div id="step2" style="display:none; margin-top:16px; border-top:1px solid var(--line); padding-top:16px">
+		<div id="sniff-result"></div>
+		<div class="row" style="margin-top:12px">
+			<label>이름 <input id="src-name" style="width:240px" placeholder="예: tranco top-1m 2026-08"></label>
+			<label>도메인 열 <input id="col-domain" type="number" min="0" style="width:70px"></label>
+			<label>순위 열 <input id="col-rank" type="number" min="0" style="width:70px" placeholder="없음"></label>
+		</div>
+		<div class="row" style="margin-top:8px">
+			<label>메모 <input id="src-note" style="width:320px"></label>
+			<button id="btn-add" class="primary">소스로 등록</button>
+		</div>
+	</div>
+</div>
+
+<div class="card" style="margin-top:16px">
+	<h2>소스 목록</h2>
+	<table>
+		<thead>
+			<tr>
+				<th>ID</th><th>이름</th><th class="num">행수</th>
+				<th class="num">전달 대기</th><th>업로드</th><th>테이블</th><th></th>
+			</tr>
+		</thead>
+		<tbody id="rows"></tbody>
+	</table>
+</div>
+
+<div class="card" style="margin-top:16px; display:none" id="preview-card">
+	<h2 id="preview-title">미리보기</h2>
+	<table>
+		<thead><tr><th class="num">순위</th><th>도메인</th><th>원본 행</th></tr></thead>
+		<tbody id="preview-rows"></tbody>
+	</table>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+	let uploaded = null;
+
+	function sniffHtml(info) {
+		const rows = info.header.map((h, i) => {
+			const roles = Object.entries(info.detected)
+				.filter(([, v]) => v === i).map(([k]) => k);
+			return `<tr><td class="num">${i}</td><td>${escapeHtml(h)}</td>
+				<td>${roles.length ? '<b>' + roles.join(', ') + '</b> 으로 추정' : ''}</td></tr>`;
+		}).join('');
+		const sample = info.sample.map(r =>
+			`<div class="sub mono">${escapeHtml(r.join(' | '))}</div>`).join('');
+		return `<div class="sub">${escapeHtml(info.filename)} · ${nf.format(info.size)} bytes · ${info.columns}열</div>
+			<table style="margin-top:8px"><thead><tr><th>열</th><th>헤더</th><th>추정</th></tr></thead>
+			<tbody>${rows}</tbody></table>
+			<div style="margin-top:8px">미리보기</div>${sample}`;
+	}
+
+	document.getElementById('btn-sniff').onclick = async () => {
+		const f = document.getElementById('file').files[0];
+		if (!f) { toast('CSV 파일을 고르세요.', true); return; }
+		const form = new FormData();
+		form.append('file', f);
+		form.append('has_header', document.getElementById('has-header').checked);
+		try {
+			const res = await fetch('/api/sources/upload', { method: 'POST', body: form });
+			const info = await res.json();
+			if (!res.ok) throw new Error(info.error || '업로드 실패');
+			uploaded = info;
+			document.getElementById('sniff-result').innerHTML = sniffHtml(info);
+			document.getElementById('col-domain').value =
+				info.detected.domain == null ? '' : info.detected.domain;
+			document.getElementById('col-rank').value =
+				info.detected.rank == null ? '' : info.detected.rank;
+			document.getElementById('src-name').value =
+				(info.filename || '').replace(/\.csv$/i, '');
+			document.getElementById('step2').style.display = '';
+			if (info.detected.domain == null) {
+				toast('도메인 컬럼을 못 찾았습니다. 열 번호를 직접 지정하세요.', true);
+			}
+		} catch (e) { toast(e.message, true); }
+	};
+
+	document.getElementById('btn-add').onclick = async () => {
+		if (!uploaded) return;
+		const domainCol = document.getElementById('col-domain').value;
+		if (domainCol === '') { toast('도메인 열 번호가 필요합니다.', true); return; }
+		const rankCol = document.getElementById('col-rank').value;
+		const btn = document.getElementById('btn-add');
+		btn.disabled = true;
+		btn.textContent = '적재 중...';
+		try {
+			const r = await api('/api/sources', {
+				method: 'POST',
+				body: JSON.stringify({
+					path: uploaded.path,
+					name: document.getElementById('src-name').value.trim(),
+					has_header: document.getElementById('has-header').checked,
+					domain_col: Number(domainCol),
+					rank_col: rankCol === '' ? null : Number(rankCol),
+					note: document.getElementById('src-note').value.trim() || null
+				})
+			});
+			toast(`소스 #${r.id} 등록 완료 — ${nf.format(r.loaded)}행 (고유 ${nf.format(r.distinct)})`);
+			document.getElementById('step2').style.display = 'none';
+			uploaded = null;
+			load();
+		} catch (e) { toast(e.message, true); }
+		finally { btn.disabled = false; btn.textContent = '소스로 등록'; }
+	};
+
+	function rowHtml(s) {
+		return `<tr>
+			<td class="num">${s.id}</td>
+			<td>${escapeHtml(s.name)}<div class="sub">${escapeHtml(s.note || '')}</div></td>
+			<td class="num">${nf.format(s.row_count)}</td>
+			<td class="num">${s.pending_new ? '<b>' + nf.format(s.pending_new) + '</b>' : '0'}</td>
+			<td class="sub">${escapeHtml(s.uploaded_at || '')}</td>
+			<td class="sub mono">${escapeHtml(s.table_name)}</td>
+			<td class="row">
+				<button data-preview="${s.id}">미리보기</button>
+				<button data-plan="${s.id}">전달 확인</button>
+				<button data-push="${s.id}" class="primary">전달</button>
+			</td>
+		</tr>`;
+	}
+
+	function pushSummary(r) {
+		return [
+			`소스 고유 ${nf.format(r.distinct)}`,
+			`신규 ${nf.format(r.dry_run ? r.new : r.added)}`,
+			`검수완료 예외 ${nf.format(r.reviewed)}`,
+			`제외 예외 ${nf.format(r.excluded)}`,
+			`이미 작업 중 ${nf.format(r.existing)}`,
+			`출처 연결 ${nf.format(r.dry_run ? r.linkable : r.linked)}`
+		].join(' · ');
+	}
+
+	async function load() {
+		const r = await api('/api/sources');
+		document.getElementById('rows').innerHTML = r.sources.length
+			? r.sources.map(rowHtml).join('')
+			: '<tr><td colspan="7" class="sub">등록된 소스가 없습니다.</td></tr>';
+
+		document.querySelectorAll('[data-preview]').forEach(b => b.onclick = async () => {
+			try {
+				const p = await api('/api/sources/' + b.dataset.preview + '/preview?limit=20');
+				document.getElementById('preview-title').textContent =
+					`미리보기 — ${p.source.name}`;
+				document.getElementById('preview-rows').innerHTML = p.rows.map(x =>
+					`<tr><td class="num">${x.source_rank == null ? '-' : x.source_rank}</td>
+					 <td>${escapeHtml(x.domain)}</td>
+					 <td class="sub mono">${escapeHtml((x.raw || '').slice(0, 120))}</td></tr>`).join('');
+				document.getElementById('preview-card').style.display = '';
+			} catch (e) { toast(e.message, true); }
+		});
+
+		document.querySelectorAll('[data-plan]').forEach(b => b.onclick = async () => {
+			try {
+				const p = await api('/api/sources/' + b.dataset.plan + '/push?dry_run=true',
+					{ method: 'POST' });
+				toast('[미리보기] ' + pushSummary(p));
+			} catch (e) { toast(e.message, true); }
+		});
+
+		document.querySelectorAll('[data-push]').forEach(b => b.onclick = async () => {
+			if (!confirm('작업데이터로 전달합니다. 검수완료·제외한 도메인은 자동으로 빠집니다.')) return;
+			b.disabled = true;
+			try {
+				const p = await api('/api/sources/' + b.dataset.push + '/push', { method: 'POST' });
+				toast(pushSummary(p));
+				load();
+			} catch (e) { toast(e.message, true); }
+			finally { b.disabled = false; }
+		});
+	}
+
+	load();
+</script>
+{% endblock %}

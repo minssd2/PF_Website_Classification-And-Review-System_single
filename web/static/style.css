@@ -116,6 +116,8 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
 
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .spacer { flex: 1; }
+/* 체크박스와 글자를 한 줄에 붙여 둔다. .row 안에서 세로 정렬이 어긋나는 걸 막는다 */
+.chk { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 
 .tag {
 	display: inline-block;
