@@ -29,6 +29,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 업로드한 CSV 원본 보관. data/ 는 .gitignore 대상이라 저장소에 올라가지 않는다
 UPLOAD_DIR = os.path.join(db.DATA_DIR, "uploads")
 
+# 카테고리 필터의 '카테고리 없음'. 실제 카테고리 이름과 겹치지 않는 값이어야 한다
+NO_CATEGORY = "__none__"
+
 app = FastAPI(title="웹사이트 분류 관리")
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
@@ -334,7 +337,12 @@ def api_sites(
 			where.append("k.is_korean = 1")
 		elif korean == "0":
 			where.append("(k.is_korean = 0 OR k.domain IS NULL)")
-		if category:
+		if category == NO_CATEGORY:
+			# 분류가 하나도 안 붙은 사이트. 릴리즈에서 '기타'(10)로 들어갈 대상이다.
+			# 라벨이 빈 배열로 박제된 경우도 있어 NULL 과 '[]' 를 함께 본다
+			where.append("""(COALESCE(m.categories, cl.categories) IS NULL
+			                 OR TRIM(COALESCE(m.categories, cl.categories)) IN ('', '[]'))""")
+		elif category:
 			where.append("(COALESCE(m.categories, cl.categories) LIKE ?)")
 			params.append('%"' + category + '"%')
 		if method:

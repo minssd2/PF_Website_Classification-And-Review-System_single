@@ -12,6 +12,7 @@
 		</select>
 		<select id="f-category">
 			<option value="">카테고리 전체</option>
+			<option value="__none__">카테고리 없음</option>
 			{% for c in categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
 		</select>
 		<select id="f-method">
