@@ -1,0 +1,272 @@
+:root {
+	--bg: #f6f7f9;
+	--panel: #ffffff;
+	--line: #e2e5ea;
+	--text: #1c1f24;
+	--muted: #6b727d;
+	--accent: #2f6fed;
+	--ok: #1b9e4b;
+	--warn: #d98207;
+	--danger: #d4372c;
+	--radius: 8px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--text);
+	font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+	font-size: 14px;
+	line-height: 1.5;
+}
+
+header {
+	background: var(--panel);
+	border-bottom: 1px solid var(--line);
+	padding: 14px 24px;
+	display: flex;
+	align-items: center;
+	gap: 28px;
+	position: sticky;
+	top: 0;
+	z-index: 10;
+}
+
+header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+
+nav { display: flex; gap: 4px; }
+
+nav a {
+	color: var(--muted);
+	text-decoration: none;
+	padding: 6px 12px;
+	border-radius: var(--radius);
+}
+
+nav a:hover { background: var(--bg); color: var(--text); }
+nav a.on { background: var(--accent); color: #fff; }
+
+main { padding: 24px; max-width: 1280px; margin: 0 auto; }
+
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+
+.card {
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	padding: 18px;
+}
+
+.card h2 { margin: 0 0 14px; font-size: 14px; font-weight: 600; }
+.card h3 { margin: 18px 0 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+
+.bignum { font-size: 28px; font-weight: 600; letter-spacing: -0.5px; }
+.sub { color: var(--muted); font-size: 12px; }
+
+.bar {
+	height: 10px;
+	background: var(--bg);
+	border-radius: 5px;
+	overflow: hidden;
+	display: flex;
+	margin: 10px 0 6px;
+}
+
+.bar span { display: block; height: 100%; }
+.bar .ok { background: var(--ok); }
+.bar .failed { background: var(--warn); }
+.bar .dead { background: var(--danger); }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr:last-child td { border-bottom: none; }
+
+button {
+	font: inherit;
+	border: 1px solid var(--line);
+	background: var(--panel);
+	color: var(--text);
+	padding: 6px 12px;
+	border-radius: 6px;
+	cursor: pointer;
+}
+
+button:hover { background: var(--bg); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover { filter: brightness(1.08); }
+button.danger { color: var(--danger); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.small { padding: 3px 8px; font-size: 12px; }
+
+input, select, textarea {
+	font: inherit;
+	padding: 6px 9px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: var(--panel);
+	color: var(--text);
+	min-width: 0;
+}
+
+input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.spacer { flex: 1; }
+
+.tag {
+	display: inline-block;
+	padding: 1px 7px;
+	border-radius: 10px;
+	background: var(--bg);
+	border: 1px solid var(--line);
+	font-size: 12px;
+	margin-right: 3px;
+}
+
+.tag.rule { border-color: #b9d3ff; background: #eaf1ff; }
+.tag.llm { border-color: #c7e9d0; background: #e9f7ee; }
+.tag.manual { border-color: #ffd9a8; background: #fff4e3; }
+.tag.unclassified { color: var(--muted); }
+.tag.reviewed { border-color: #9fdcb4; background: #e2f6e9; color: #146c37; }
+.tag.excluded { border-color: #e8b4b0; background: #fbeceb; color: #a32b22; }
+
+/* 접속 시 주소가 바뀌는 사이트 표시 — 다른 도메인으로 가는 경우를 눈에 띄게 한다.
+   접두사를 붙인 이유: 유틸리티 클래스 .sub 와 이름이 겹치면 서로 덮어쓴다 */
+.redirect { margin-top: 2px; }
+.redirect.rd-external { color: var(--danger); font-weight: 500; }
+.redirect.rd-sub, .redirect.rd-parent { color: var(--muted); }
+
+.muted { color: var(--muted); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.nowrap { white-space: nowrap; }
+.truncate { max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.toast {
+	position: fixed;
+	bottom: 24px;
+	left: 50%;
+	transform: translateX(-50%) translateY(80px);
+	background: #23262b;
+	color: #fff;
+	padding: 10px 18px;
+	border-radius: var(--radius);
+	opacity: 0;
+	transition: all .2s;
+	pointer-events: none;
+	max-width: 80vw;
+}
+
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.error { background: var(--danger); }
+
+details summary { cursor: pointer; padding: 4px 0; }
+
+.hint {
+	background: #f0f4ff;
+	border: 1px solid #d5e0ff;
+	border-radius: var(--radius);
+	padding: 10px 14px;
+	margin-bottom: 16px;
+	font-size: 13px;
+}
+
+.hint code {
+	background: #fff;
+	padding: 1px 5px;
+	border-radius: 4px;
+	border: 1px solid var(--line);
+}
+
+/* 카드형 단일 선택 — 한 번 클릭으로 고를 수 있게 select 대신 쓴다 */
+.choices { display: flex; gap: 8px; }
+
+.choice {
+	flex: 1;
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	padding: 10px 12px;
+	cursor: pointer;
+	background: var(--panel);
+	transition: border-color .12s, background .12s;
+}
+
+/* 라디오는 눈에서만 감추고 접근성 트리·키보드 포커스에는 남긴다
+   (opacity:0 + pointer-events:none 으로 숨기면 스크린리더와 키보드에서 사라진다) */
+.choice input {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	padding: 0;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+	border: 0;
+}
+
+.choice b { display: block; font-weight: 600; }
+.choice span { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.choice:hover { background: var(--bg); }
+.choice:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.choice:has(input:checked) {
+	border-color: var(--accent);
+	background: #eef3ff;
+	box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.choice.ok:has(input:checked) {
+	border-color: var(--ok);
+	background: #e9f7ee;
+	box-shadow: inset 0 0 0 1px var(--ok);
+}
+
+.choice.no:has(input:checked) {
+	border-color: var(--danger);
+	background: #fbeceb;
+	box-shadow: inset 0 0 0 1px var(--danger);
+}
+
+dialog {
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	padding: 20px 22px;
+	box-shadow: 0 12px 40px rgba(0, 0, 0, .18);
+	color: var(--text);
+}
+
+dialog::backdrop { background: rgba(20, 22, 26, .35); }
+dialog h3 { margin: 16px 0 6px; }
+
+/* 판정 근거 모달 — 규칙이 어디에 걸렸는지 보여준다.
+   why- 접두사를 붙인 이유: 유틸리티 클래스 .grid 는 display:grid 라서
+   이름이 겹치면 표가 그리드로 바뀌어 thead 와 tbody 의 칸 폭이 따로 놀았다 */
+#why-dialog form { max-height: 78vh; overflow-y: auto; }
+table.why { font-size: 13px; table-layout: fixed; }
+table.why th { vertical-align: top; }
+table.why td { vertical-align: top; word-break: break-word; }
+table.why:not(.why-grid) th { width: 92px; white-space: nowrap; }
+table.why.why-grid { border: 1px solid var(--line); border-radius: 6px; }
+table.why.why-grid thead th {
+	background: var(--bg); font-size: 11px; letter-spacing: .04em; white-space: nowrap;
+}
+table.why.why-grid tbody tr:last-child td { border-bottom: none; }
+table.why tfoot td { border-bottom: none; border-top: 1px solid var(--line); }
+table.why td.snip { font-size: 11.5px; line-height: 1.45; color: var(--muted); }
+
+/* 걸린 규칙 표 — 패턴이 한 글자씩 세로로 끊기지 않게 칸 폭을 고정한다 */
+table.why-rules col.c-cat { width: 76px; }
+table.why-rules col.c-pat { width: 92px; }
+table.why-rules col.c-kind { width: 96px; }
+table.why-rules col.c-w { width: 56px; }
+table.why-rules td.mono { word-break: break-all; }
+
+.catbar { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.catbar .name { width: 92px; flex: none; }
+.catbar .track { flex: 1; height: 14px; background: var(--bg); border-radius: 3px; overflow: hidden; }
+.catbar .fill { height: 100%; background: var(--accent); }
+.catbar .val { width: 64px; text-align: right; font-variant-numeric: tabular-nums; }

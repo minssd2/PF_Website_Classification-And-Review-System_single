@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>데이터 가공 흐름 — 웹사이트 분류 파이프라인</title>
+<style>
+	:root {
+		--bg: #0d1117;
+		--panel: #151b23;
+		--panel-2: #1b222c;
+		--line: #262d38;
+		--tx: #d5dbe3;
+		--tx-dim: #8b97a6;
+		--tx-faint: #5f6b7a;
+		--s1: #4c9aff;
+		--s2: #2dd4bf;
+		--s3: #4ade80;
+		--s4: #c084fc;
+		--s5: #fbbf24;
+		--s6: #e5e9ef;
+		--warn: #f87171;
+	}
+	* { box-sizing: border-box; }
+	html { -webkit-text-size-adjust: 100%; }
+	body {
+		margin: 0;
+		background: var(--bg);
+		color: var(--tx);
+		font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+		      "Pretendard", "Noto Sans KR", Segoe UI, sans-serif;
+		letter-spacing: -0.01em;
+	}
+	.wrap { max-width: 1080px; margin: 0 auto; padding: 56px 24px 96px; }
+
+	code, .mono {
+		font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+		font-size: 0.88em;
+	}
+	code {
+		background: var(--panel-2);
+		border: 1px solid var(--line);
+		border-radius: 4px;
+		padding: 1px 5px;
+		color: #a8d5ff;
+	}
+
+	/* ---------- 헤더 ---------- */
+	header { border-bottom: 1px solid var(--line); padding-bottom: 28px; margin-bottom: 44px; }
+	h1 { font-size: 26px; font-weight: 650; margin: 0 0 8px; letter-spacing: -0.02em; }
+	.sub { color: var(--tx-dim); font-size: 14px; margin: 0; }
+	.asof { color: var(--tx-faint); font-size: 12.5px; margin-top: 14px; }
+
+	.kpis {
+		display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+		gap: 1px; background: var(--line); border: 1px solid var(--line);
+		border-radius: 8px; overflow: hidden; margin-top: 24px;
+	}
+	.kpi { background: var(--panel); padding: 14px 16px; }
+	.kpi .n { font-size: 19px; font-weight: 650; letter-spacing: -0.02em; }
+	.kpi .l { font-size: 11.5px; color: var(--tx-dim); margin-top: 3px; }
+
+	/* ---------- 섹션 ---------- */
+	section { margin-bottom: 52px; }
+	h2 {
+		font-size: 13px; font-weight: 600; text-transform: uppercase;
+		letter-spacing: 0.09em; color: var(--tx-faint);
+		margin: 0 0 20px; padding-bottom: 10px; border-bottom: 1px solid var(--line);
+	}
+	h3 { font-size: 15px; font-weight: 600; margin: 30px 0 12px; }
+	p { margin: 0 0 14px; color: var(--tx-dim); font-size: 14px; }
+
+	/* ---------- 파이프라인 ---------- */
+	.flow { display: flex; flex-direction: column; gap: 0; }
+	.stage {
+		display: grid; grid-template-columns: 44px 1fr; gap: 18px;
+		position: relative; padding-bottom: 26px;
+	}
+	.stage:last-child { padding-bottom: 0; }
+	.rail { position: relative; display: flex; justify-content: center; }
+	.dot {
+		width: 30px; height: 30px; border-radius: 50%;
+		background: var(--panel); border: 1.5px solid var(--c);
+		color: var(--c); display: flex; align-items: center; justify-content: center;
+		font-size: 12.5px; font-weight: 650; flex-shrink: 0; z-index: 1;
+	}
+	.stage:not(:last-child) .rail::after {
+		content: ""; position: absolute; top: 30px; bottom: -26px;
+		width: 1.5px; background: linear-gradient(var(--c), var(--line));
+	}
+	.card {
+		background: var(--panel); border: 1px solid var(--line);
+		border-radius: 9px; padding: 16px 18px;
+	}
+	.card-h { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+	.card-h .t { font-size: 15.5px; font-weight: 640; color: var(--c); }
+	.card-h .cmd {
+		font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+		color: var(--tx-faint); background: var(--panel-2);
+		border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px;
+	}
+	.card .d { font-size: 13.5px; color: var(--tx-dim); margin: 0 0 12px; }
+
+	.io { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; font-size: 12.5px; }
+	.chip {
+		border: 1px solid var(--line); background: var(--panel-2);
+		border-radius: 5px; padding: 3px 9px; color: var(--tx);
+		font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px;
+	}
+	.chip.out { border-color: var(--c); color: var(--c); }
+	.arrow { color: var(--tx-faint); }
+
+	.facts { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+	.fact {
+		font-size: 11.5px; color: var(--tx-dim);
+		background: var(--panel-2); border: 1px solid var(--line);
+		border-radius: 5px; padding: 3px 9px;
+	}
+	.fact b { color: var(--tx); font-weight: 600; }
+
+	/* ---------- 표 ---------- */
+	.tw { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 0 8px; }
+	table { border-collapse: collapse; width: 100%; font-size: 13.5px; min-width: 460px; }
+	th, td { text-align: left; padding: 9px 13px; border-bottom: 1px solid var(--line); }
+	th {
+		font-size: 11.5px; font-weight: 600; text-transform: uppercase;
+		letter-spacing: 0.06em; color: var(--tx-faint); background: var(--panel);
+		white-space: nowrap;
+	}
+	tbody tr:last-child td { border-bottom: none; }
+	th.num { text-align: right; }
+	td.num { text-align: right; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+	.tbl-box { border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+
+	.tag {
+		display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 4px;
+		border: 1px solid var(--line); background: var(--panel-2);
+		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	}
+	.tag.ok    { color: var(--s3); border-color: #24603a; }
+	.tag.warn  { color: var(--s5); border-color: #6b5219; }
+	.tag.bad   { color: var(--warn); border-color: #6e2b2b; }
+	.tag.info  { color: var(--s1); border-color: #1f4d80; }
+	.tag.mute  { color: var(--tx-faint); }
+
+	/* ---------- 상태 전이 ---------- */
+	.lanes { display: grid; gap: 10px; }
+	.lane {
+		display: grid; grid-template-columns: 108px 1fr; gap: 14px; align-items: center;
+		background: var(--panel); border: 1px solid var(--line);
+		border-radius: 8px; padding: 11px 14px;
+	}
+	.lane .k { font-size: 12px; color: var(--tx-faint); font-family: ui-monospace, Menlo, monospace; }
+	.lane .v { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+
+	/* ---------- 보호 ---------- */
+	.guard { display: grid; gap: 1px; background: var(--line);
+	         border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+	.guard-row {
+		background: var(--panel); padding: 12px 15px;
+		display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center;
+	}
+	.guard-row .w { font-size: 13.5px; }
+	.guard-row .w small { display: block; color: var(--tx-faint); font-size: 11.5px; margin-top: 2px;
+	                      font-family: ui-monospace, Menlo, monospace; }
+
+	.note {
+		border-left: 2px solid var(--s5); background: var(--panel);
+		padding: 12px 16px; border-radius: 0 7px 7px 0; font-size: 13.5px;
+		color: var(--tx-dim); margin: 16px 0 0;
+	}
+	.note b { color: var(--tx); font-weight: 600; }
+
+	footer { margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--line);
+	         color: var(--tx-faint); font-size: 12.5px; }
+
+	@media (max-width: 640px) {
+		.wrap { padding: 36px 16px 64px; }
+		.stage { grid-template-columns: 32px 1fr; gap: 12px; }
+		.dot { width: 26px; height: 26px; font-size: 11px; }
+		.stage:not(:last-child) .rail::after { top: 26px; }
+		.lane { grid-template-columns: 1fr; gap: 6px; }
+	}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+	<h1>데이터 가공 흐름</h1>
+	<p class="sub">tranco 100만 도메인 → 한국어 서비스 선별 → 제품 카테고리 10종 분류 → 사람 검수 → CSV 산출</p>
+
+	<div class="kpis">
+		<div class="kpi"><div class="n">1,000,028</div><div class="l">기초 도메인</div></div>
+		<div class="kpi"><div class="n">104,008</div><div class="l">수집 성공</div></div>
+		<div class="kpi"><div class="n">329,875</div><div class="l">한국어 판정</div></div>
+		<div class="kpi"><div class="n">2,659</div><div class="l">한국어 사이트</div></div>
+		<div class="kpi"><div class="n">1,189</div><div class="l">검수 처리</div></div>
+		<div class="kpi"><div class="n">581</div><div class="l">카테고리 확정</div></div>
+	</div>
+	<p class="asof">기준 2026-08-05 09:33 · 모든 상태는 <code>data/sites.db</code>(SQLite/WAL)에 저장되며 각 단계는 미처리 행만 처리하는 멱등 작업이다.</p>
+</header>
+
+<!-- ============ 전체 흐름 ============ -->
+<section>
+	<h2>전체 흐름</h2>
+
+	<div class="flow">
+
+		<div class="stage" style="--c: var(--s1)">
+			<div class="rail"><div class="dot">0</div></div>
+			<div class="card">
+				<div class="card-h"><span class="t">적재</span><span class="cmd">run.py init</span></div>
+				<p class="d">tranco 상위 100만 도메인 CSV를 읽어 초기 행을 만들고 카테고리 규칙 시드를 넣는다.</p>
+				<div class="io">
+					<span class="chip">top-1m.csv</span>
+					<span class="arrow">→</span>
+					<span class="chip out">sites</span>
+					<span class="chip out">category_rules</span>
+				</div>
+				<div class="facts">
+					<span class="fact">도메인 <b>1,000,028</b></span>
+					<span class="fact">초기 상태 <b>pending</b></span>
+					<span class="fact">규칙 <b>303</b>개</span>
+				</div>
+			</div>
+		</div>
+
+		<div class="stage" style="--c: var(--s1)">
+			<div class="rail"><div class="dot">1</div></div>
+			<div class="card">
+				<div class="card-h"><span class="t">수집</span><span class="cmd">run.py fetch</span><span class="cmd">run.py retry</span></div>
+				<p class="d"><code>Accept-Language: ko-KR</code> 로 요청해 다국어 사이트도 한국어 페이지를 받는다. 제목, 설명, 언어 속성, charset, 본문 발췌를 저장한다.</p>
+				<div class="io">
+					<span class="chip">sites (pending)</span>
+					<span class="arrow">→</span>
+					<span class="chip out">title / description / html_lang / charset / text_sample</span>
+				</div>
+				<div class="facts">
+					<span class="fact">동시 <b>100</b></span>
+					<span class="fact">연결 <b>3초</b> · 읽기 <b>5초</b></span>
+					<span class="fact">최대 <b>200KB</b></span>
+					<span class="fact">본문 발췌 <b>500자</b></span>
+					<span class="fact">재시도 <b>3회</b></span>
+					<span class="fact">200건마다 커밋</span>
+				</div>
+			</div>
+		</div>
+
+		<div class="stage" style="--c: var(--s1)">
+			<div class="rail"><div class="dot">2</div></div>
+			<div class="card">
+				<div class="card-h"><span class="t">차단 표시</span><span class="cmd">run.py mark-blocked</span></div>
+				<p class="d">정부(방심위) 차단 안내 페이지가 수집된 건을 골라낸다. ISP가 <code>warning.or.kr</code> 로 리다이렉트한 결과라 내용이 한국어여도 그 사이트의 것이 아니다. 행은 지우지 않고 표시만 남긴다.</p>
+				<div class="io">
+					<span class="chip">final_url / title</span>
+					<span class="arrow">→</span>
+					<span class="chip out">fetch_status = blocked</span>
+				</div>
+				<div class="facts"><span class="fact">차단 <b>1,044</b>건</span><span class="fact">판정·분류·산출물에서 제외</span></div>
+			</div>
+		</div>
+
+		<div class="stage" style="--c: var(--s2)">
+			<div class="rail"><div class="dot">3</div></div>
+			<div class="card">
+				<div class="card-h"><span class="t">한국어 선별</span><span class="cmd">run.py detect-korean</span></div>
+				<p class="d">네트워크 없이 수집물만 보고 점수를 매긴다. 합계가 임계값 <b>100</b> 이상이면 한국어 서비스로 본다.</p>
+				<div class="io">
+					<span class="chip">sites (ok/failed/dead)</span>
+					<span class="arrow">→</span>
+					<span class="chip out">korean.is_korean / score / reasons</span>
+				</div>
+				<div class="facts">
+					<span class="fact">판정 <b>329,875</b> / 100만</span>
+					<span class="fact">한국어 <b>2,659</b></span>
+					<span class="fact">비한국어 <b>327,216</b></span>
+				</div>
+			</div>
+		</div>
+
+		<div class="stage" style="--c: var(--s3)">
+			<div class="rail"><div class="dot">4</div></div>
+			<div class="card">
+				<div class="card-h"><span class="t">규칙 분류</span><span class="cmd">run.py classify-rule</span></div>
+				<p class="d">도메인·키워드 규칙으로 카테고리별 점수를 합산한다. 최고 점수가 <b>2.0</b> 미만이면 미분류로 남겨 LLM 판정으로 넘긴다.</p>
+				<div class="io">
+					<span class="chip">korean (is_korean=1)</span>
+					<span class="arrow">→</span>
+					<span class="chip out">classification (method=rule)</span>
+				</div>
+				<div class="facts">
+					<span class="fact">규칙 확정 <b>249</b></span>
+					<span class="fact">미분류 <b>2,002</b></span>
+					<span class="fact">항상 전체 규칙으로 재분류</span>
+				</div>
+			</div>
+		</div>
+
+		<div class="stage" style="--c: var(--s4)">
+			<div class="rail"><div class="dot">5</div></div>
+			<div class="card">
+				<div class="card-h"><span class="t">LLM 판정</span><span class="cmd">llm-export</span><span class="cmd">llm-import</span><span class="cmd">llm-auto</span></div>
+				<p class="d">규칙으로 확정 못 한 건을 배치 파일로 내보내 Claude Code 세션이 판정하고, 결과 JSON을 다시 반영한다. API가 아니라 세션 파일 핸드오프 방식이다.</p>
+				<div class="io">
+					<span class="chip">llm_queue</span>
+					<span class="arrow">→</span>
+					<span class="chip">배치 md</span>
+					<span class="arrow">→</span>
+					<span class="chip">결과 json</span>
+					<span class="arrow">→</span>
+					<span class="chip out">classification (method=llm)</span>
+				</div>
+				<div class="facts">
+					<span class="fact">배치 <b>40</b>건</span>
+					<span class="fact">발췌 <b>300자</b></span>
+					<span class="fact">자동 선정: 미분류 또는 규칙 확신도 &lt; <b>0.6</b></span>
+					<span class="fact">LLM 확정 <b>147</b></span>
+				</div>
+			</div>
+		</div>
+
+		<div class="stage" style="--c: var(--s5)">
+			<div class="rail"><div class="dot">6</div></div>
+			<div class="card">
+				<div class="card-h"><span class="t">사람 검수</span><span class="cmd">run.py web</span></div>
+				<p class="d">웹 UI에서 사이트를 확인해 <b>검수완료</b> 또는 <b>제외</b>로 확정한다. 제목·카테고리를 직접 고칠 수도 있다. 검수하는 순간 그 시점 값이 박제되어 이후 자동 처리가 건드리지 못한다.</p>
+				<div class="io">
+					<span class="chip">classification</span>
+					<span class="arrow">→</span>
+					<span class="chip out">review_status</span>
+					<span class="chip out">manual_labels</span>
+				</div>
+				<div class="facts">
+					<span class="fact">검수완료 <b>291</b></span>
+					<span class="fact">제외 <b>898</b></span>
+					<span class="fact">미검수 <b>1,712</b></span>
+				</div>
+			</div>
+		</div>
+
+		<div class="stage" style="--c: var(--s6)">
+			<div class="rail"><div class="dot">7</div></div>
+			<div class="card">
+				<div class="card-h"><span class="t">산출</span><span class="cmd">run.py export</span></div>
+				<p class="d">검수 결과를 반영한 최종 CSV를 만든다. <code>utf-8-sig</code> 로 저장해 엑셀에서 바로 열린다.</p>
+				<div class="io">
+					<span class="chip">classification + review_status</span>
+					<span class="arrow">→</span>
+					<span class="chip out">out/*.csv</span>
+				</div>
+				<div class="facts">
+					<span class="fact">korean_sites.csv</span>
+					<span class="fact">classified_sites.csv</span>
+					<span class="fact">excluded_sites.csv</span>
+					<span class="fact">by_category/&lt;카테고리&gt;.csv</span>
+					<span class="fact">summary</span>
+				</div>
+			</div>
+		</div>
+
+	</div>
+
+	<div class="note">
+		<b>단계는 자동으로 이어지지 않는다.</b> 수집 → 선별 → 분류가 각각 독립 명령이다.
+		판정·분류는 네트워크 없이 몇 번이든 다시 돌릴 수 있게 하려는 의도다.
+		수집이 진행돼도 <code>detect-korean</code> 과 <code>classify-rule</code> 을 따로 돌려야 검수 목록에 쌓인다.
+	</div>
+</section>
+
+<!-- ============ 상태 전이 ============ -->
+<section>
+	<h2>데이터가 거치는 상태</h2>
+
+	<div class="lanes">
+		<div class="lane">
+			<div class="k">fetch_status</div>
+			<div class="v">
+				<span class="tag mute">pending</span><span class="arrow">→</span>
+				<span class="tag ok">ok</span>
+				<span class="tag bad">failed</span>
+				<span class="tag bad">dead</span>
+				<span class="tag warn">blocked</span>
+			</div>
+		</div>
+		<div class="lane">
+			<div class="k">korean.is_korean</div>
+			<div class="v">
+				<span class="tag mute">(없음)</span><span class="arrow">→</span>
+				<span class="tag ok">1 한국어</span>
+				<span class="tag mute">0 비한국어</span>
+			</div>
+		</div>
+		<div class="lane">
+			<div class="k">classification.method</div>
+			<div class="v">
+				<span class="tag mute">unclassified</span><span class="arrow">→</span>
+				<span class="tag info">rule</span><span class="arrow">→</span>
+				<span class="tag" style="color:var(--s4);border-color:#4b2f6b">llm</span><span class="arrow">→</span>
+				<span class="tag warn">manual</span>
+			</div>
+		</div>
+		<div class="lane">
+			<div class="k">review_status</div>
+			<div class="v">
+				<span class="tag mute">(없음) 미검수</span><span class="arrow">→</span>
+				<span class="tag ok">reviewed 검수완료</span>
+				<span class="tag mute">excluded 제외</span>
+			</div>
+		</div>
+	</div>
+
+	<h3>수집 결과</h3>
+	<div class="tbl-box tw">
+		<table>
+			<thead><tr><th>상태</th><th>뜻</th><th class="num">건수</th><th>다음 단계</th></tr></thead>
+			<tbody>
+				<tr><td><span class="tag ok">ok</span></td><td>본문까지 받음</td><td class="num">104,008</td><td>한국어 판정 대상</td></tr>
+				<tr><td><span class="tag bad">failed</span></td><td>접속 실패 (대부분 타임아웃)</td><td class="num">792,206</td><td><code>retry</code> 대상 · .kr 은 TLD 점수만으로 판정 가능</td></tr>
+				<tr><td><span class="tag bad">dead</span></td><td>DNS 없음 등 재시도 무의미</td><td class="num">102,770</td><td>판정만 하고 종료</td></tr>
+				<tr><td><span class="tag warn">blocked</span></td><td>정부 차단 안내 페이지</td><td class="num">1,044</td><td>목록만 남기고 제외</td></tr>
+			</tbody>
+		</table>
+	</div>
+
+	<h3>한국어 판정 점수</h3>
+	<p>아래 항목을 합산해 <b>100점 이상</b>이면 한국어 서비스로 본다. 접속에 실패해도 <code>.kr</code> 도메인은 단독으로 통과한다.</p>
+	<div class="tbl-box tw">
+		<table>
+			<thead><tr><th>근거</th><th>조건</th><th class="num">점수</th></tr></thead>
+			<tbody>
+				<tr><td>TLD</td><td><code>.kr</code> 도메인</td><td class="num">+100</td></tr>
+				<tr><td>html lang</td><td><code>&lt;html lang="ko"&gt;</code></td><td class="num">+80</td></tr>
+				<tr><td>한글 비율</td><td>본문 한글 10% 이상</td><td class="num">+80</td></tr>
+				<tr><td>한글 비율</td><td>본문 한글 3% 이상</td><td class="num">+30</td></tr>
+				<tr><td>charset</td><td>euc-kr 계열</td><td class="num">+60</td></tr>
+				<tr><td>meta</td><td>제목·설명에 한글</td><td class="num">+40</td></tr>
+			</tbody>
+		</table>
+	</div>
+
+	<h3>분류 규칙</h3>
+	<div class="tbl-box tw">
+		<table>
+			<thead><tr><th>종류</th><th class="num">개수</th><th>매칭 방식</th><th>예</th></tr></thead>
+			<tbody>
+				<tr><td><span class="tag info">domain</span></td><td class="num">194</td><td>도메인 라벨 <b>토큰 정확 일치</b>가 기본. 부분일치는 <code>*</code> 나 <code>.</code> 로 명시</td><td><code>coupang</code> · <code>*news*</code> · <code>*shop.*</code></td></tr>
+				<tr><td><span class="tag info">keyword</span></td><td class="num">98</td><td>제목·설명·본문 발췌에 포함되면 가산</td><td><code>장바구니</code> · <code>패치노트</code></td></tr>
+				<tr><td><span class="tag bad">exclude</span></td><td class="num">11</td><td>걸리면 해당 카테고리 점수를 0으로</td><td><code>쇼핑몰 솔루션</code></td></tr>
+			</tbody>
+		</table>
+	</div>
+	<div class="note">
+		<b>토큰 정확 일치가 기본인 이유.</b> 단순 부분일치로 하면 생성형AI의 <code>ai</code> 가
+		<code>mail</code>·<code>air</code> 에 걸린다. 대신 <code>ardentnews</code> 처럼 붙여 쓴 도메인을 놓치므로
+		실측으로 검증한 것만 <code>*news*</code> 형태로 확장한다. <code>.shop</code>·<code>.store</code> 처럼
+		TLD로도 존재하는 단어는 <code>*shop.*</code> 로 제한해 쓰레기 TLD를 거른다.
+	</div>
+</section>
+
+<!-- ============ 검수 ============ -->
+<section>
+	<h2>검수와 확정</h2>
+
+	<p>자동 분류는 후보를 만드는 데까지다. 최종 결정은 사람이 한다. 검수 화면에서 각 사이트를 세 가지로 처리한다.</p>
+
+	<div class="tbl-box tw">
+		<table>
+			<thead><tr><th>처리</th><th>뜻</th><th>산출물</th><th class="num">건수</th></tr></thead>
+			<tbody>
+				<tr><td><span class="tag ok">검수완료</span></td><td>이 분류가 맞다</td><td>포함</td><td class="num">291</td></tr>
+				<tr><td><span class="tag mute">제외</span></td><td>10개 카테고리에 해당 없음</td><td><code>excluded_sites.csv</code> 로만</td><td class="num">898</td></tr>
+				<tr><td><span class="tag warn">수정</span></td><td>제목·카테고리를 직접 고침</td><td>포함 (사람 지정 우선)</td><td class="num">298</td></tr>
+			</tbody>
+		</table>
+	</div>
+
+	<h3>검수하는 순간 값이 박제된다</h3>
+	<p>검수·제외를 누르면 그 시점의 제목·카테고리·한국어 여부가 <code>manual_labels</code> 에 저장된다.
+	이후 어떤 자동 처리도 이 값을 바꾸지 못한다.</p>
+
+	<div class="guard">
+		<div class="guard-row"><div class="w">LLM 판정 반영<small>llm-import</small></div><div><span class="tag ok">차단</span></div></div>
+		<div class="guard-row"><div class="w">규칙 재분류<small>classify-rule --force</small></div><div><span class="tag ok">차단</span></div></div>
+		<div class="guard-row"><div class="w">LLM 자동 선정<small>llm-export</small></div><div><span class="tag ok">차단</span></div></div>
+		<div class="guard-row"><div class="w">한국어 재판정<small>detect-korean --force</small></div><div><span class="tag ok">차단</span></div></div>
+		<div class="guard-row"><div class="w">차단 표시<small>mark-blocked</small></div><div><span class="tag ok">차단</span></div></div>
+		<div class="guard-row"><div class="w">재수집으로 제목 갱신<small>fetch / retry</small></div><div><span class="tag ok">차단</span></div></div>
+	</div>
+
+	<div class="note">
+		검수를 <b>해제</b>하면 자동으로 박제된 값만 지워지고 원래 흐름으로 돌아간다.
+		사람이 <code>수정</code> 화면에서 직접 고친 라벨은 그대로 남는다.
+	</div>
+</section>
+
+<!-- ============ 테이블 구조 ============ -->
+<section>
+	<h2>테이블 구조</h2>
+
+	<div class="tbl-box tw">
+		<table>
+			<thead><tr><th>테이블</th><th>담는 것</th><th>쓰는 단계</th><th class="num">행</th></tr></thead>
+			<tbody>
+				<tr><td><code>sites</code></td><td>도메인·순위·수집 결과(제목·설명·본문)</td><td>init · fetch · retry</td><td class="num">1,000,028</td></tr>
+				<tr><td><code>korean</code></td><td>한국어 여부·점수·근거</td><td>detect-korean</td><td class="num">329,875</td></tr>
+				<tr><td><code>category_rules</code></td><td>도메인·키워드·제외 규칙</td><td>init · 웹 UI</td><td class="num">303</td></tr>
+				<tr><td><code>classification</code></td><td>카테고리·판정 방식·확신도·근거</td><td>classify-rule · llm-import</td><td class="num">3,206</td></tr>
+				<tr><td><code>llm_queue</code> <code>llm_batches</code></td><td>LLM 판정 대기열과 배치 이력</td><td>llm-export · llm-import</td><td class="num">0 / 6</td></tr>
+				<tr><td><code>review_status</code></td><td>검수완료 / 제외 표시</td><td>웹 UI 검수</td><td class="num">1,187</td></tr>
+				<tr><td><code>manual_labels</code></td><td>사람이 확정한 제목·카테고리 (박제)</td><td>웹 UI 검수·수정</td><td class="num">1,187</td></tr>
+				<tr><td><code>job_runs</code></td><td>각 단계 실행 이력·진행률</td><td>전 단계</td><td class="num">49</td></tr>
+				<tr><td><code>settings</code></td><td>타임아웃·임계값 등 20개 설정</td><td>웹 UI 설정</td><td class="num">20</td></tr>
+			</tbody>
+		</table>
+	</div>
+</section>
+
+<!-- ============ 결과 ============ -->
+<section>
+	<h2>현재 분류 결과</h2>
+
+	<div class="tbl-box tw">
+		<table>
+			<thead><tr><th>카테고리</th><th class="num">건수</th><th>카테고리</th><th class="num">건수</th></tr></thead>
+			<tbody>
+				<tr><td>쇼핑</td><td class="num">113</td><td>엔터테인먼트</td><td class="num">55</td></tr>
+				<tr><td>SNS</td><td class="num">105</td><td>웹하드</td><td class="num">34</td></tr>
+				<tr><td>뉴스</td><td class="num">91</td><td>취업</td><td class="num">28</td></tr>
+				<tr><td>게임</td><td class="num">70</td><td>웹메일</td><td class="num">15</td></tr>
+				<tr><td>생성형AI</td><td class="num">56</td><td>증권</td><td class="num">14</td></tr>
+			</tbody>
+		</table>
+	</div>
+
+	<h3>판정 방식별</h3>
+	<div class="tbl-box tw">
+		<table>
+			<thead><tr><th>방식</th><th>뜻</th><th class="num">건수</th></tr></thead>
+			<tbody>
+				<tr><td><span class="tag mute">unclassified</span></td><td>규칙으로 확정 못 함 — LLM 판정 대상</td><td class="num">2,002</td></tr>
+				<tr><td><span class="tag warn">blocked</span></td><td>정부 차단 사이트</td><td class="num">508</td></tr>
+				<tr><td><span class="tag info">rule</span></td><td>규칙 점수로 확정</td><td class="num">249</td></tr>
+				<tr><td><span class="tag" style="color:var(--s4);border-color:#4b2f6b">llm</span></td><td>세션 판정</td><td class="num">147</td></tr>
+				<tr><td><span class="tag bad">manual</span></td><td>사람이 직접 지정</td><td class="num">300</td></tr>
+			</tbody>
+		</table>
+	</div>
+</section>
+
+<footer>
+	설계·구조는 <code>README.md</code>, 실행 절차는 <code>GUIDE.md</code>,
+	계획 대비 달라진 점은 <code>PLAN.md</code>, 작업 이력은 <code>WORK_LOG.md</code> 를 본다.
+</footer>
+
+</div>
+</body>
+</html>

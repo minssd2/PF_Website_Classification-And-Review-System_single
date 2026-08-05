@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}카테고리 규칙{% endblock %}
+
+{% block content %}
+<div class="hint">
+	<b>도메인 패턴</b>은 기본적으로 도메인 라벨 토큰과 <b>정확히 일치</b>할 때만 매칭됩니다
+	(<code>ai</code> 가 <code>mail</code> 에 걸리지 않도록). 부분일치가 필요하면
+	<code>sec.co.kr</code> 처럼 <code>.</code> 을 넣거나 <code>*sec*</code> 처럼 와일드카드를 쓰세요.
+	<b>키워드</b>는 title·description·본문 발췌에 대한 부분일치입니다.
+	<b>제외어</b>가 걸리면 그 카테고리 점수는 0이 됩니다.
+</div>
+
+<div class="card">
+	<div class="row">
+		<label>카테고리</label>
+		<select id="cat-select">
+			{% for c in categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+		</select>
+		<div class="spacer"></div>
+		<button id="btn-reclassify-all" class="primary">규칙 반영해 전체 재분류</button>
+	</div>
+	<p class="sub">분류는 항상 전체 규칙으로 계산합니다. 한 카테고리만 다시 돌리면
+		나머지 카테고리의 기존 결과가 지워지기 때문입니다.</p>
+</div>
+
+<div class="card" style="margin-top:16px">
+	<h2>규칙 추가</h2>
+	<div class="row">
+		<select id="new-type">
+			<option value="domain">도메인 패턴</option>
+			<option value="keyword">키워드</option>
+			<option value="exclude">제외어</option>
+		</select>
+		<input id="new-pattern" placeholder="패턴 (예: coupang / 장바구니)" style="flex:1;min-width:220px">
+		<input id="new-weight" type="number" step="0.5" value="1.5" style="width:90px" title="가중치">
+		<button id="btn-preview">미리보기</button>
+		<button id="btn-add" class="primary">추가</button>
+	</div>
+	<div id="preview-box"></div>
+</div>
+
+<div class="card" style="margin-top:16px">
+	<h2 id="rules-title">규칙 목록</h2>
+	<table>
+		<thead>
+			<tr>
+				<th style="width:100px">종류</th>
+				<th>패턴</th>
+				<th class="num" style="width:80px">가중치</th>
+				<th style="width:70px">사용</th>
+				<th style="width:60px"></th>
+			</tr>
+		</thead>
+		<tbody id="rule-rows"></tbody>
+	</table>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+	const TYPE_LABEL = { domain: '도메인', keyword: '키워드', exclude: '제외어' };
+	const sel = document.getElementById('cat-select');
+
+	async function loadRules() {
+		const cat = sel.value;
+		document.getElementById('rules-title').textContent = cat + ' 규칙';
+		const { rules } = await api('/api/rules?category=' + encodeURIComponent(cat));
+		document.getElementById('rule-rows').innerHTML = rules.length ? rules.map(r => `
+			<tr data-id="${r.id}">
+				<td>${TYPE_LABEL[r.rule_type] || r.rule_type}</td>
+				<td class="mono">${escapeHtml(r.pattern)}</td>
+				<td class="num">
+					<input type="number" step="0.5" value="${r.weight}" style="width:70px"
+					       onchange="updateRule(${r.id}, {weight: parseFloat(this.value)})">
+				</td>
+				<td>
+					<input type="checkbox" ${r.enabled ? 'checked' : ''}
+					       onchange="updateRule(${r.id}, {enabled: this.checked})">
+				</td>
+				<td><button class="small danger" onclick="removeRule(${r.id})">삭제</button></td>
+			</tr>`).join('') : '<tr><td colspan="5" class="sub">규칙이 없습니다.</td></tr>';
+	}
+
+	async function updateRule(id, patch) {
+		try {
+			await api('/api/rules', { method: 'PATCH', body: JSON.stringify(Object.assign({ id }, patch)) });
+			toast('저장되었습니다. 반영하려면 재분류하세요.');
+		} catch (e) { toast(e.message, true); }
+	}
+
+	async function removeRule(id) {
+		if (!confirm('이 규칙을 삭제할까요?')) return;
+		try {
+			await api('/api/rules/' + id, { method: 'DELETE' });
+			toast('삭제되었습니다.');
+			loadRules();
+		} catch (e) { toast(e.message, true); }
+	}
+
+	document.getElementById('btn-add').onclick = async () => {
+		const pattern = document.getElementById('new-pattern').value.trim();
+		if (!pattern) { toast('패턴을 입력하세요.', true); return; }
+		try {
+			await api('/api/rules', {
+				method: 'POST',
+				body: JSON.stringify({
+					category: sel.value,
+					rule_type: document.getElementById('new-type').value,
+					pattern: pattern,
+					weight: parseFloat(document.getElementById('new-weight').value) || 1.0
+				})
+			});
+			document.getElementById('new-pattern').value = '';
+			document.getElementById('preview-box').innerHTML = '';
+			toast('추가되었습니다. 반영하려면 재분류하세요.');
+			loadRules();
+		} catch (e) { toast(e.message, true); }
+	};
+
+	document.getElementById('btn-preview').onclick = async () => {
+		const pattern = document.getElementById('new-pattern').value.trim();
+		if (!pattern) { toast('패턴을 입력하세요.', true); return; }
+		const box = document.getElementById('preview-box');
+		box.innerHTML = '<p class="sub">확인 중...</p>';
+		try {
+			const r = await api('/api/rules/preview', {
+				method: 'POST',
+				body: JSON.stringify({
+					rule_type: document.getElementById('new-type').value,
+					pattern: pattern
+				})
+			});
+			box.innerHTML = `<h3>한국어 사이트 ${nf.format(r.count)}건 매칭 (샘플 ${r.samples.length}건)</h3>` +
+				(r.samples.length
+					? '<table><tbody>' + r.samples.map(s =>
+						`<tr><td class="mono">${escapeHtml(s.domain)}</td>` +
+						`<td class="truncate sub">${escapeHtml(s.title || '')}</td></tr>`).join('') + '</tbody></table>'
+					: '<p class="sub">매칭되는 사이트가 없습니다.</p>');
+		} catch (e) {
+			box.innerHTML = '';
+			toast(e.message, true);
+		}
+	};
+
+	document.getElementById('btn-reclassify-all').onclick = () =>
+		reclassify('/api/jobs/classify-rule?force=true');
+
+	async function reclassify(url) {
+		try {
+			await api(url, { method: 'POST' });
+			toast('재분류를 시작했습니다. 진행 상황 화면에서 결과를 확인하세요.');
+		} catch (e) { toast(e.message, true); }
+	}
+
+	sel.onchange = loadRules;
+	loadRules();
+</script>
+{% endblock %}

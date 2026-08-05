@@ -1,0 +1,341 @@
+# 카테고리 규칙 초기값 — `run.py init` 이 DB(category_rules)에 주입한다.
+# 주입 이후의 수정은 웹 UI(/categories)에서 하며, 이 파일은 다시 읽지 않는다.
+#
+# rule_type
+#   domain  : 도메인 매칭. 패턴에 '*' 가 있으면 와일드카드, '.' 이 있으면 부분일치,
+#             그 외에는 도메인 라벨 토큰과 정확히 일치할 때만 매칭 (ai 가 mail 에 걸리는 오탐 방지)
+#   keyword : title / description / 본문 발췌에 대한 부분일치 (대소문자 무시)
+#   exclude : 매칭되면 해당 카테고리 점수를 0으로 만든다
+#
+# weight 관례: 서비스 확정 도메인 3.0 / 일반 토큰 1.5 / 키워드 1.0
+
+웹메일:
+  domain:
+    - { pattern: mail, weight: 2.0 }
+    - { pattern: webmail, weight: 3.0 }
+    - { pattern: gmail, weight: 3.0 }
+    - { pattern: outlook, weight: 3.0 }
+    - { pattern: hanmail, weight: 3.0 }
+    - { pattern: daum.net, weight: 1.0 }
+    - { pattern: proton.me, weight: 3.0 }
+    - { pattern: zoho, weight: 1.5 }
+  keyword:
+    - { pattern: 받은편지함, weight: 2.0 }
+    - { pattern: 메일함, weight: 2.0 }
+    - { pattern: 웹메일, weight: 2.0 }
+    - { pattern: 스팸메일, weight: 1.5 }
+    - { pattern: 메일 주소, weight: 1.0 }
+    - { pattern: 이메일 로그인, weight: 1.5 }
+    - { pattern: 메일 보내기, weight: 1.0 }
+    - { pattern: 첨부파일, weight: 0.5 }
+  exclude:
+    - { pattern: 메일 마케팅, weight: 1.0 }
+    - { pattern: 이메일 발송 대행, weight: 1.0 }
+
+쇼핑:
+  domain:
+    - { pattern: shop, weight: 1.5 }
+    - { pattern: mall, weight: 1.5 }
+    - { pattern: store, weight: 1.5 }
+    - { pattern: market, weight: 1.5 }
+    - { pattern: coupang, weight: 3.0 }
+    - { pattern: gmarket, weight: 3.0 }
+    - { pattern: 11st, weight: 3.0 }
+    - { pattern: auction.co.kr, weight: 3.0 }
+    - { pattern: ssg.com, weight: 3.0 }
+    - { pattern: lotteon, weight: 3.0 }
+    - { pattern: tmon, weight: 3.0 }
+    - { pattern: wemakeprice, weight: 3.0 }
+    - { pattern: oliveyoung, weight: 3.0 }
+    - { pattern: musinsa, weight: 3.0 }
+    - { pattern: kurly, weight: 3.0 }
+    - { pattern: ably, weight: 2.0 }
+    - { pattern: aliexpress, weight: 3.0 }
+    - { pattern: amazon, weight: 3.0 }
+    - { pattern: temu, weight: 3.0 }
+    - { pattern: danawa, weight: 3.0 }
+    - { pattern: interpark, weight: 2.0 }
+  keyword:
+    - { pattern: 장바구니, weight: 2.0 }
+    - { pattern: 무료배송, weight: 2.0 }
+    - { pattern: 최저가, weight: 1.5 }
+    - { pattern: 상품평, weight: 1.5 }
+    - { pattern: 구매하기, weight: 1.5 }
+    - { pattern: 배송조회, weight: 1.5 }
+    - { pattern: 신상품, weight: 1.0 }
+    - { pattern: 할인쿠폰, weight: 1.0 }
+    - { pattern: 결제하기, weight: 1.0 }
+    - { pattern: 리뷰, weight: 0.5 }
+  exclude:
+    - { pattern: 쇼핑몰 제작, weight: 1.0 }
+    - { pattern: 쇼핑몰 솔루션, weight: 1.0 }
+    - { pattern: 호스팅 서비스, weight: 1.0 }
+
+증권:
+  domain:
+    - { pattern: securities, weight: 3.0 }
+    - { pattern: "*sec.co.kr", weight: 3.0 }
+    - { pattern: stock, weight: 2.0 }
+    - { pattern: invest, weight: 1.5 }
+    - { pattern: kiwoom, weight: 3.0 }
+    - { pattern: samsungpop, weight: 3.0 }
+    - { pattern: miraeasset, weight: 3.0 }
+    - { pattern: nhqv, weight: 3.0 }
+    - { pattern: shinhaninvest, weight: 3.0 }
+    - { pattern: kbsec, weight: 3.0 }
+    - { pattern: daishin, weight: 3.0 }
+    - { pattern: truefriend, weight: 3.0 }
+    - { pattern: krx.co.kr, weight: 3.0 }
+    - { pattern: investing.com, weight: 3.0 }
+    - { pattern: tradingview, weight: 3.0 }
+    - { pattern: upbit, weight: 2.5 }
+    - { pattern: bithumb, weight: 2.5 }
+    - { pattern: binance, weight: 2.5 }
+  keyword:
+    - { pattern: 코스피, weight: 2.0 }
+    - { pattern: 코스닥, weight: 2.0 }
+    - { pattern: 공모주, weight: 2.0 }
+    - { pattern: 계좌개설, weight: 1.5 }
+    - { pattern: 주식 시세, weight: 2.0 }
+    - { pattern: 종목 분석, weight: 1.5 }
+    - { pattern: 선물옵션, weight: 2.0 }
+    - { pattern: 매수, weight: 0.5 }
+    - { pattern: 매도, weight: 0.5 }
+    - { pattern: 증권, weight: 1.5 }
+    - { pattern: ETF, weight: 1.0 }
+  exclude:
+    - { pattern: 주식회사, weight: 1.0 }
+
+취업:
+  domain:
+    - { pattern: job, weight: 2.0 }
+    - { pattern: jobs, weight: 2.0 }
+    - { pattern: career, weight: 2.0 }
+    - { pattern: recruit, weight: 2.0 }
+    - { pattern: saramin, weight: 3.0 }
+    - { pattern: jobkorea, weight: 3.0 }
+    - { pattern: incruit, weight: 3.0 }
+    - { pattern: wanted.co.kr, weight: 3.0 }
+    - { pattern: jumpit, weight: 3.0 }
+    - { pattern: rocketpunch, weight: 3.0 }
+    - { pattern: albamon, weight: 3.0 }
+    - { pattern: alba, weight: 2.0 }
+    - { pattern: worknet, weight: 3.0 }
+    - { pattern: linkedin, weight: 2.0 }
+  keyword:
+    - { pattern: 채용공고, weight: 2.5 }
+    - { pattern: 구인구직, weight: 2.5 }
+    - { pattern: 이력서, weight: 2.0 }
+    - { pattern: 자기소개서, weight: 2.0 }
+    - { pattern: 신입 채용, weight: 2.0 }
+    - { pattern: 경력직, weight: 1.5 }
+    - { pattern: 공채, weight: 1.5 }
+    - { pattern: 아르바이트, weight: 1.5 }
+    - { pattern: 면접 후기, weight: 1.5 }
+    - { pattern: 연봉 정보, weight: 1.0 }
+  exclude:
+    - { pattern: 채용 대행 솔루션, weight: 1.0 }
+
+게임:
+  domain:
+    - { pattern: game, weight: 2.0 }
+    - { pattern: games, weight: 2.0 }
+    - { pattern: nexon, weight: 3.0 }
+    - { pattern: ncsoft, weight: 3.0 }
+    - { pattern: netmarble, weight: 3.0 }
+    - { pattern: pearlabyss, weight: 3.0 }
+    - { pattern: krafton, weight: 3.0 }
+    - { pattern: riotgames, weight: 3.0 }
+    - { pattern: steampowered, weight: 3.0 }
+    - { pattern: epicgames, weight: 3.0 }
+    - { pattern: hoyoverse, weight: 3.0 }
+    - { pattern: roblox, weight: 3.0 }
+    - { pattern: pmang, weight: 3.0 }
+    - { pattern: hangame, weight: 3.0 }
+    - { pattern: inven, weight: 2.5 }
+    - { pattern: playstation, weight: 2.5 }
+    - { pattern: nintendo, weight: 2.5 }
+  keyword:
+    - { pattern: 서버 점검, weight: 2.0 }
+    - { pattern: 패치노트, weight: 2.0 }
+    - { pattern: 클라이언트 다운로드, weight: 1.5 }
+    - { pattern: 게임 다운로드, weight: 2.0 }
+    - { pattern: 길드, weight: 1.5 }
+    - { pattern: 캐릭터 생성, weight: 1.5 }
+    - { pattern: 아이템, weight: 1.0 }
+    - { pattern: 랭킹, weight: 0.5 }
+    - { pattern: 신규 유저, weight: 1.0 }
+    - { pattern: 플레이, weight: 0.5 }
+  exclude:
+    - { pattern: 도박, weight: 1.0 }
+    - { pattern: 카지노, weight: 1.0 }
+
+엔터테인먼트:
+  domain:
+    - { pattern: movie, weight: 2.0 }
+    - { pattern: music, weight: 2.0 }
+    - { pattern: melon, weight: 3.0 }
+    - { pattern: genie, weight: 2.5 }
+    - { pattern: bugs, weight: 2.0 }
+    - { pattern: flo, weight: 2.0 }
+    - { pattern: watcha, weight: 3.0 }
+    - { pattern: tving, weight: 3.0 }
+    - { pattern: wavve, weight: 3.0 }
+    - { pattern: netflix, weight: 3.0 }
+    - { pattern: disneyplus, weight: 3.0 }
+    - { pattern: laftel, weight: 3.0 }
+    - { pattern: webtoon, weight: 3.0 }
+    - { pattern: comic, weight: 2.0 }
+    - { pattern: novel, weight: 2.0 }
+    - { pattern: ridibooks, weight: 3.0 }
+    - { pattern: spotify, weight: 3.0 }
+    - { pattern: cgv, weight: 3.0 }
+    - { pattern: megabox, weight: 3.0 }
+    - { pattern: lottecinema, weight: 3.0 }
+    - { pattern: maxmovie, weight: 2.5 }
+  keyword:
+    - { pattern: 드라마 다시보기, weight: 2.5 }
+    - { pattern: 무료 영화, weight: 2.0 }
+    - { pattern: 웹툰, weight: 2.0 }
+    - { pattern: 웹소설, weight: 2.0 }
+    - { pattern: 예능, weight: 1.5 }
+    - { pattern: 음악 스트리밍, weight: 2.0 }
+    - { pattern: 플레이리스트, weight: 1.5 }
+    - { pattern: 최신 앨범, weight: 1.5 }
+    - { pattern: 영화 예매, weight: 2.0 }
+    - { pattern: 회차, weight: 0.5 }
+
+뉴스:
+  domain:
+    - { pattern: news, weight: 2.5 }
+    - { pattern: press, weight: 1.5 }
+    - { pattern: ilbo, weight: 2.5 }
+    - { pattern: sinmun, weight: 2.5 }
+    - { pattern: times, weight: 1.5 }
+    - { pattern: daily, weight: 1.5 }
+    - { pattern: chosun, weight: 3.0 }
+    - { pattern: joongang, weight: 3.0 }
+    - { pattern: donga, weight: 3.0 }
+    - { pattern: hani, weight: 3.0 }
+    - { pattern: khan.co.kr, weight: 3.0 }
+    - { pattern: hankyung, weight: 3.0 }
+    - { pattern: mk.co.kr, weight: 3.0 }
+    - { pattern: yna.co.kr, weight: 3.0 }
+    - { pattern: ytn, weight: 3.0 }
+    - { pattern: sbs.co.kr, weight: 2.5 }
+    - { pattern: imbc, weight: 2.5 }
+    - { pattern: kbs.co.kr, weight: 2.5 }
+    - { pattern: jtbc, weight: 2.5 }
+    - { pattern: ohmynews, weight: 3.0 }
+    - { pattern: nocutnews, weight: 3.0 }
+    - { pattern: newsis, weight: 3.0 }
+    - { pattern: edaily, weight: 3.0 }
+    - { pattern: mediatoday, weight: 3.0 }
+  keyword:
+    - { pattern: 속보, weight: 2.0 }
+    - { pattern: 단독 보도, weight: 2.0 }
+    - { pattern: 사설, weight: 1.5 }
+    - { pattern: 오피니언, weight: 1.5 }
+    - { pattern: 특파원, weight: 2.0 }
+    - { pattern: 기자, weight: 1.0 }
+    - { pattern: 취재, weight: 1.5 }
+    - { pattern: 헤드라인, weight: 1.5 }
+    - { pattern: 오늘의 뉴스, weight: 2.0 }
+  exclude:
+    - { pattern: 보도자료 배포, weight: 1.0 }
+
+SNS:
+  domain:
+    - { pattern: facebook, weight: 3.0 }
+    - { pattern: instagram, weight: 3.0 }
+    - { pattern: twitter, weight: 3.0 }
+    - { pattern: x.com, weight: 2.0 }
+    - { pattern: threads, weight: 3.0 }
+    - { pattern: tiktok, weight: 3.0 }
+    - { pattern: band.us, weight: 3.0 }
+    - { pattern: kakao, weight: 2.0 }
+    - { pattern: blog, weight: 2.0 }
+    - { pattern: tistory, weight: 3.0 }
+    - { pattern: brunch, weight: 2.5 }
+    - { pattern: cafe, weight: 1.5 }
+    - { pattern: dcinside, weight: 2.5 }
+    - { pattern: fmkorea, weight: 2.5 }
+    - { pattern: clien, weight: 2.5 }
+    - { pattern: ppomppu, weight: 2.5 }
+    - { pattern: ruliweb, weight: 2.5 }
+    - { pattern: theqoo, weight: 2.5 }
+    - { pattern: reddit, weight: 3.0 }
+    - { pattern: discord, weight: 2.5 }
+    - { pattern: pinterest, weight: 2.5 }
+    - { pattern: linkedin, weight: 2.0 }
+  keyword:
+    - { pattern: 팔로워, weight: 2.0 }
+    - { pattern: 팔로우, weight: 1.5 }
+    - { pattern: 게시물, weight: 1.0 }
+    - { pattern: 타임라인, weight: 1.5 }
+    - { pattern: 친구 추가, weight: 1.5 }
+    - { pattern: 커뮤니티, weight: 1.0 }
+    - { pattern: 자유게시판, weight: 1.5 }
+    - { pattern: 댓글, weight: 0.5 }
+    - { pattern: 프로필 사진, weight: 1.0 }
+
+웹하드:
+  domain:
+    - { pattern: webhard, weight: 3.0 }
+    - { pattern: file, weight: 2.0 }
+    - { pattern: disk, weight: 2.0 }
+    - { pattern: cloud, weight: 1.5 }
+    - { pattern: drive, weight: 1.5 }
+    - { pattern: dropbox, weight: 3.0 }
+    - { pattern: mega.nz, weight: 3.0 }
+    - { pattern: mediafire, weight: 3.0 }
+    - { pattern: filecast, weight: 3.0 }
+    - { pattern: bomulzip, weight: 3.0 }
+    - { pattern: kfile, weight: 3.0 }
+    - { pattern: tomatofile, weight: 3.0 }
+    - { pattern: onedrive, weight: 3.0 }
+    - { pattern: box.com, weight: 2.5 }
+    - { pattern: pikpak, weight: 2.5 }
+  keyword:
+    - { pattern: 웹하드, weight: 3.0 }
+    - { pattern: 무제한 다운로드, weight: 2.5 }
+    - { pattern: 자료실, weight: 1.5 }
+    - { pattern: 포인트 충전, weight: 1.5 }
+    - { pattern: 클라우드 저장, weight: 2.0 }
+    - { pattern: 파일 공유, weight: 2.0 }
+    - { pattern: 대용량 파일, weight: 2.0 }
+    - { pattern: 업로드 속도, weight: 1.0 }
+    - { pattern: 저장 용량, weight: 1.0 }
+
+생성형AI:
+  domain:
+    - { pattern: openai, weight: 3.0 }
+    - { pattern: chatgpt, weight: 3.0 }
+    - { pattern: anthropic, weight: 3.0 }
+    - { pattern: claude, weight: 3.0 }
+    - { pattern: gemini, weight: 2.5 }
+    - { pattern: perplexity, weight: 3.0 }
+    - { pattern: midjourney, weight: 3.0 }
+    - { pattern: stability, weight: 2.5 }
+    - { pattern: huggingface, weight: 3.0 }
+    - { pattern: wrtn, weight: 3.0 }
+    - { pattern: copilot, weight: 2.5 }
+    - { pattern: runwayml, weight: 3.0 }
+    - { pattern: elevenlabs, weight: 3.0 }
+    - { pattern: civitai, weight: 3.0 }
+    - { pattern: leonardo.ai, weight: 3.0 }
+    - { pattern: "*.ai", weight: 1.0 }
+    - { pattern: ai, weight: 1.5 }
+    - { pattern: gpt, weight: 2.0 }
+  keyword:
+    - { pattern: 생성형 AI, weight: 3.0 }
+    - { pattern: 프롬프트, weight: 2.0 }
+    - { pattern: 이미지 생성, weight: 2.0 }
+    - { pattern: AI 챗봇, weight: 2.5 }
+    - { pattern: 인공지능 글쓰기, weight: 2.5 }
+    - { pattern: 언어 모델, weight: 2.0 }
+    - { pattern: ChatGPT, weight: 2.0 }
+    - { pattern: LLM, weight: 1.5 }
+    - { pattern: AI 이미지, weight: 2.0 }
+  exclude:
+    - { pattern: AI 반도체, weight: 1.0 }

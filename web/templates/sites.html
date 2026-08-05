@@ -1,0 +1,554 @@
+{% extends "base.html" %}
+{% block title %}사이트 검수{% endblock %}
+
+{% block content %}
+<div class="card">
+	<div class="row">
+		<input id="f-q" placeholder="도메인 또는 제목 검색" style="flex:1;min-width:200px">
+		<select id="f-korean">
+			<option value="1">한국어만</option>
+			<option value="">전체</option>
+			<option value="0">비한국어만</option>
+		</select>
+		<select id="f-category">
+			<option value="">카테고리 전체</option>
+			{% for c in categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+		</select>
+		<select id="f-method">
+			<option value="">분류방식 전체</option>
+			<option value="rule">규칙</option>
+			<option value="llm">세션 판정</option>
+			<option value="manual">수동</option>
+			<option value="unclassified">미분류</option>
+		</select>
+		<select id="f-review">
+			<option value="">검수상태 전체</option>
+			<option value="pending">미검수</option>
+			<option value="reviewed">검수완료</option>
+			<option value="excluded">제외</option>
+		</select>
+		<select id="f-redirect" title="접속했을 때 주소가 바뀌는지">
+			<option value="">주소이동 전체</option>
+			<option value="yes">이동함</option>
+			<option value="no">그대로</option>
+		</select>
+		<select id="f-blocked" title="국내에서 차단된 사이트인지">
+			<option value="">차단여부 전체</option>
+			<option value="1">차단됨</option>
+			<option value="0">차단 제외</option>
+		</select>
+		<input id="f-rank" type="number" placeholder="순위 이내" style="width:110px">
+		<button id="btn-search" class="primary">검색</button>
+	</div>
+</div>
+
+<div class="card" style="margin-top:16px">
+	<div class="row">
+		<h2 id="result-count" style="margin:0">-</h2>
+		<span id="review-summary" class="sub"></span>
+		<div class="spacer"></div>
+		<span class="sub">이 페이지 전체를</span>
+		<button id="bulk-reviewed" class="small">검수완료</button>
+		<button id="bulk-excluded" class="small">제외</button>
+		<button id="bulk-clear" class="small">미검수로</button>
+		<button id="bulk-llm" class="small" title="이 페이지 사이트들을 LLM 판정 대기열에 넣습니다">LLM 분석 요청</button>
+		<button id="btn-prev" class="small">이전</button>
+		<span id="page-info" class="sub"></span>
+		<button id="btn-next" class="small">다음</button>
+	</div>
+	<table style="margin-top:10px">
+		<thead>
+			<tr>
+				<th class="num" style="width:70px">순위</th>
+				<th style="width:190px">도메인</th>
+				<th>제목 / 판정 근거</th>
+				<th style="width:180px">카테고리</th>
+				<th style="width:190px">최종 상태</th>
+				<th style="width:60px"></th>
+			</tr>
+		</thead>
+		<tbody id="rows"></tbody>
+	</table>
+</div>
+
+<dialog id="edit-dialog">
+	<form method="dialog" style="min-width:460px;max-width:560px">
+		<h2 id="edit-domain" style="margin-top:0"></h2>
+
+		<h3>제목</h3>
+		<input id="edit-title" placeholder="제목" style="width:100%">
+		<div class="row" style="margin-top:6px">
+			<span class="sub" id="edit-title-origin"></span>
+			<div class="spacer"></div>
+			<button type="button" id="edit-title-reset" class="small">수집한 제목으로 되돌리기</button>
+		</div>
+
+		<h3 id="review-legend">최종 상태</h3>
+		<div class="choices" id="edit-review" role="radiogroup" aria-labelledby="review-legend">
+			<label class="choice">
+				<input type="radio" name="review" value="" aria-label="미검수 — 아직 확인 안 함">
+				<b>미검수</b><span>아직 확인 안 함</span>
+			</label>
+			<label class="choice ok">
+				<input type="radio" name="review" value="reviewed" aria-label="검수완료 — 결과에 포함">
+				<b>검수완료</b><span>결과에 포함</span>
+			</label>
+			<label class="choice no">
+				<input type="radio" name="review" value="excluded" aria-label="제외 — 결과에서 뺌">
+				<b>제외</b><span>결과에서 뺌</span>
+			</label>
+		</div>
+		<input id="edit-reason" placeholder="제외 사유 (선택)" style="width:100%;margin-top:8px">
+
+		<h3>카테고리</h3>
+		<div id="edit-cats" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+
+		<h3>기타</h3>
+		<label class="row" style="margin-bottom:10px">
+			<input type="checkbox" id="edit-korean"> 한국어 서비스로 표시
+		</label>
+		<input id="edit-note" placeholder="메모 (선택)" style="width:100%;margin-bottom:14px">
+
+		<div class="row">
+			<button value="cancel">취소</button>
+			<div class="spacer"></div>
+			<button type="button" id="edit-clear" class="danger">수동 수정 해제</button>
+			<button type="button" id="edit-save" class="primary">저장</button>
+		</div>
+	</form>
+</dialog>
+
+<dialog id="why-dialog">
+	<form method="dialog" style="width:min(760px, 88vw)">
+		<h2 id="why-domain" style="margin-top:0"></h2>
+		<div id="why-body"><p class="sub">불러오는 중…</p></div>
+		<div class="row" style="margin-top:14px">
+			<span class="sub">규칙을 고치면 이 내용도 바뀝니다. 저장된 값이 아니라 지금 규칙으로 다시 채점한 결과입니다.</span>
+			<div class="spacer"></div>
+			<button value="close" class="primary">닫기</button>
+		</div>
+	</form>
+</dialog>
+{% endblock %}
+
+{% block script %}
+<script>
+	const CATEGORIES = {{ categories | tojson }};
+	const REVIEW_LABELS = { reviewed: '검수완료', excluded: '제외' };
+	let offset = 0;
+	const LIMIT = 50;
+	let total = 0;
+	let currentItems = [];
+
+	function query() {
+		const p = new URLSearchParams();
+		const q = document.getElementById('f-q').value.trim();
+		if (q) p.set('q', q);
+		const kr = document.getElementById('f-korean').value;
+		if (kr !== '') p.set('korean', kr);
+		const cat = document.getElementById('f-category').value;
+		if (cat) p.set('category', cat);
+		const m = document.getElementById('f-method').value;
+		if (m) p.set('method', m);
+		const rv = document.getElementById('f-review').value;
+		if (rv) p.set('review', rv);
+		const rd = document.getElementById('f-redirect').value;
+		if (rd) p.set('redirect', rd);
+		const bl = document.getElementById('f-blocked').value;
+		if (bl) p.set('blocked', bl);
+		const rank = document.getElementById('f-rank').value;
+		if (rank) p.set('rank_max', rank);
+		p.set('limit', LIMIT);
+		p.set('offset', offset);
+		return p.toString();
+	}
+
+	function reviewCell(it, idx) {
+		const st = it.review_status;
+		const badge = st
+			? `<span class="tag ${st === 'excluded' ? 'excluded' : 'reviewed'}">${REVIEW_LABELS[st]}</span>`
+			: '<span class="sub">미검수</span>';
+		const reason = it.review_reason
+			? `<div class="sub truncate" style="max-width:170px">${escapeHtml(it.review_reason)}</div>` : '';
+		const buttons = [
+			st === 'reviewed' ? null : `<button class="small" onclick="setReview(${idx},'reviewed')">검수</button>`,
+			st === 'excluded' ? null : `<button class="small" onclick="setReview(${idx},'excluded')">제외</button>`,
+			st ? `<button class="small" onclick="setReview(${idx},null)">해제</button>` : null
+		].filter(Boolean).join(' ');
+		return `${badge}${reason}<div style="margin-top:4px">${buttons}</div>`;
+	}
+
+	function llmCell(it, idx) {
+		if (it.llm_batch_id) {
+			return `<span class="tag llm" title="배치 ${escapeHtml(it.llm_batch_id)} 로 내보냈습니다">` +
+			       'LLM 분석 중</span>';
+		}
+		if (it.llm_requested) {
+			return '<span class="tag llm" title="다음 배치 내보내기에 포함됩니다">LLM 요청됨</span>' +
+			       ` <button class="small" onclick="requestLlm(${idx}, false)">취소</button>`;
+		}
+		return ` <button class="small" title="LLM 판정 대기열에 넣습니다"` +
+		       ` onclick="requestLlm(${idx}, true)">LLM 요청</button>`;
+	}
+
+	async function load() {
+		const data = await api('/api/sites?' + query());
+		total = data.total;
+		currentItems = data.items;
+		document.getElementById('result-count').textContent = nf.format(total) + '건';
+		document.getElementById('page-info').textContent =
+			total ? `${nf.format(offset + 1)}–${nf.format(Math.min(offset + LIMIT, total))}` : '';
+		document.getElementById('btn-prev').disabled = offset <= 0;
+		document.getElementById('btn-next').disabled = offset + LIMIT >= total;
+
+		const counts = data.items.reduce((acc, i) => {
+			const k = i.review_status || 'pending';
+			acc[k] = (acc[k] || 0) + 1;
+			return acc;
+		}, {});
+		document.getElementById('review-summary').textContent =
+			`이 페이지 — 검수완료 ${counts.reviewed || 0} · 제외 ${counts.excluded || 0} · 미검수 ${counts.pending || 0}`;
+
+		// 행 데이터를 HTML 속성에 심지 않고 인덱스로 참조한다.
+		// 제목에 작은따옴표가 있으면(Let's Encrypt 같은) 속성이 깨지기 때문이다.
+		document.getElementById('rows').innerHTML = data.items.length ? data.items.map((it, idx) => {
+			const method = it.method || 'unclassified';
+			const cats = (it.categories || []).map(c => `<span class="tag">${escapeHtml(c)}</span>`).join('') ||
+				'<span class="sub">-</span>';
+			const reason = [
+				it.korean_reasons ? '한국어: ' + escapeHtml(it.korean_reasons) +
+					' (' + (it.korean_score || 0) + '점)' : null,
+				it.evidence ? '분류: ' + escapeHtml(it.evidence) : null,
+				it.fetch_status !== 'ok' ? '수집: ' + escapeHtml(it.fetch_status) : null
+			].filter(Boolean).join(' · ');
+			const dimmed = it.review_status === 'excluded' ? ' style="opacity:.55"' : '';
+			const edited = it.title_edited
+				? ' <span class="tag manual" title="사람이 고친 제목">수정됨</span>' : '';
+			// 접속했을 때 다른 주소로 가는 경우를 알려준다. 링크는 실제 도착지로 건다.
+			const rd = it.redirect;
+			const linkTarget = it.final_url || ('https://' + it.domain);
+			let redirectNote = '';
+			if (rd) {
+				const addBtn = rd.exists
+					? '<span class="sub" title="이미 목록에 있습니다">·목록에 있음</span>'
+					: `<button class="small" title="이 주소를 같은 순위로 목록에 추가하고 바로 수집합니다"
+						onclick="addRedirect(${idx}, this)">+ 추가</button>`;
+				redirectNote = `<div class="sub redirect rd-${rd.kind}" title="접속하면 이 주소로 이동합니다">` +
+					`↳ ${escapeHtml(rd.host)} ${addBtn}</div>`;
+			}
+			return `<tr${dimmed}>
+				<td class="num">${nf.format(it.rank)}</td>
+				<td class="mono">
+					<a href="${escapeHtml(linkTarget)}" target="_blank"
+						rel="noopener noreferrer">${escapeHtml(it.domain)}</a>
+					${redirectNote}
+				</td>
+				<td>
+					<div class="truncate">${escapeHtml(it.title || '(제목 없음)')}${edited}</div>
+					<div class="sub">${reason}
+						<button class="small" style="margin-left:4px"
+							title="어떤 규칙이 어디에 걸렸는지 봅니다"
+							onclick="openWhy(${idx})">근거</button>
+					</div>
+				</td>
+				<td>${cats}<div><span class="tag ${method}">${method}</span>${llmCell(it, idx)}</div></td>
+				<td>${reviewCell(it, idx)}</td>
+				<td><button class="small" onclick="openEdit(${idx})">수정</button></td>
+			</tr>`;
+		}).join('') : '<tr><td colspan="6" class="sub">결과가 없습니다.</td></tr>';
+	}
+
+	const METHOD_LABELS = {
+		rule: '규칙', llm: '세션 판정', manual: '사람이 직접 지정',
+		unclassified: '미분류', blocked: '차단 사이트'
+	};
+
+	window.openWhy = async function (idx) {
+		const it = currentItems[idx];
+		const dlg = document.getElementById('why-dialog');
+		document.getElementById('why-domain').textContent = it.domain;
+		document.getElementById('why-body').innerHTML = '<p class="sub">불러오는 중…</p>';
+		dlg.showModal();
+		try {
+			const d = await api('/api/explain/' + encodeURIComponent(it.domain));
+			document.getElementById('why-body').innerHTML = renderWhy(d);
+		} catch (e) {
+			document.getElementById('why-body').innerHTML =
+				`<p class="sub">불러오지 못했습니다: ${escapeHtml(e.message)}</p>`;
+		}
+	};
+
+	function renderWhy(d) {
+		const k = d.korean, r = d.rules, s = d.stored;
+		const out = [];
+
+		// 1) 최종 상태 — 저장된 값이 무엇이고 왜 그렇게 됐는지
+		// 검수로 박제된 건은 목록과 똑같이 원래 방식을 보여준다 (목록은 llm, 모달은 manual 이면 헷갈린다)
+		const method = s.label_source === 'review'
+			? (s.origin_method || 'unclassified')
+			: (s.method || 'unclassified');
+		const overrides = [];
+		if (s.label_source === 'edit') overrides.push('사람이 수정한 라벨로 고정');
+		else if (s.label_source === 'review') overrides.push(
+			`검수(${s.review_status === 'excluded' ? '제외' : '검수완료'}) 시점 값으로 박제 — 이후 자동 처리가 바꾸지 못함`);
+		if (s.fetch_status === 'blocked') overrides.push('국내 차단 사이트');
+		if (s.llm_batch_id) overrides.push(`LLM 배치 ${escapeHtml(s.llm_batch_id)} 로 내보냄`);
+
+		out.push(`<h3>현재 저장된 결과</h3>
+			<table class="why">
+				<tr><th>카테고리</th><td>${(s.categories || []).map(c => `<span class="tag">${escapeHtml(c)}</span>`).join(' ') || '<span class="sub">없음</span>'}</td></tr>
+				<tr><th>판정 방식</th><td><span class="tag ${method}">${METHOD_LABELS[method] || method}</span></td></tr>
+				<tr><th>확신도</th><td>${s.confidence == null ? '-' : s.confidence}</td></tr>
+				<tr><th>근거 요약</th><td class="mono sub">${escapeHtml(s.evidence || '-')}</td></tr>
+				<tr><th>판정 시각</th><td class="sub">${escapeHtml(s.classified_at || '-')}</td></tr>
+				${overrides.length ? `<tr><th>고정 사유</th><td>${overrides.map(o => `<div class="sub">${o}</div>`).join('')}</td></tr>` : ''}
+			</table>`);
+
+		// 2) 한국어 판정 점수 내역
+		if (k) {
+			const rows = k.items.map(i =>
+				`<tr><td>${escapeHtml(i.label)}</td><td class="mono sub">${escapeHtml(i.token)}</td><td class="num">+${i.score}</td></tr>`).join('');
+			out.push(`<h3>한국어 판정</h3>
+				<table class="why why-grid">
+					<colgroup><col><col style="width:110px"><col style="width:64px"></colgroup>
+					<thead><tr><th>근거</th><th>토큰</th><th class="num">점수</th></tr></thead>
+					<tbody>${rows || '<tr><td colspan="3" class="sub">걸린 항목 없음</td></tr>'}</tbody>
+					<tfoot><tr><td colspan="2"><b>합계</b> (임계값 ${k.threshold})</td>
+						<td class="num"><b>${k.score}</b></td></tr></tfoot>
+				</table>
+				<p class="sub">→ ${k.is_korean ? '한국어 서비스로 판정' : '한국어 아님'}${
+					k.stored_is_korean !== null && k.stored_is_korean !== k.is_korean
+						? ' <b>(저장된 값과 다름 — 재판정 필요)</b>' : ''}</p>`);
+		}
+
+		// 3) 어떤 규칙이 어디에 걸렸는지
+		const mrows = r.matched.map(m => `<tr>
+			<td><span class="tag">${escapeHtml(m.category)}</span></td>
+			<td class="mono">${escapeHtml(m.pattern)}</td>
+			<td class="sub">${escapeHtml(m.rule_type)}<br>${escapeHtml(m.where)}</td>
+			<td class="num">+${m.weight.toFixed(1)}</td>
+			<td class="sub snip">${escapeHtml(m.snippet || '')}</td>
+		</tr>`).join('');
+		out.push(`<h3>걸린 규칙</h3>
+			<table class="why why-grid why-rules">
+				<colgroup><col class="c-cat"><col class="c-pat"><col class="c-kind"><col class="c-w"><col></colgroup>
+				<thead><tr><th>카테고리</th><th>패턴</th><th>종류 · 위치</th><th class="num">가중치</th><th>걸린 자리</th></tr></thead>
+				<tbody>${mrows || `<tr><td colspan="5" class="sub">걸린 규칙이 없습니다.${
+					r.has_text ? '' : ' (제목·본문이 없어 키워드 규칙이 동작할 수 없습니다)'}</td></tr>`}</tbody>
+			</table>`);
+
+		if (r.excluded.length) {
+			out.push(`<h3>제외 규칙에 걸림</h3>
+				<table class="why why-grid why-rules">
+					<colgroup><col class="c-cat"><col class="c-pat"><col></colgroup>
+					<tbody>${r.excluded.map(e => `<tr>
+					<td><span class="tag">${escapeHtml(e.category)}</span></td>
+					<td class="mono">${escapeHtml(e.pattern)}</td>
+					<td class="sub snip">${escapeHtml(e.snippet || '')}</td>
+				</tr>`).join('')}</tbody></table>
+				<p class="sub">해당 카테고리 점수가 0으로 깎입니다.</p>`);
+		}
+
+		// 4) 합산 결과와 임계값 비교
+		const srows = r.scores.map(x =>
+			`<tr><td><span class="tag">${escapeHtml(x.category)}</span></td>
+			 <td class="num">${x.score.toFixed(1)}</td>
+			 <td class="sub">${x.score >= r.min_score ? '기준 통과' : `기준 미달 (${r.min_score} 필요)`}</td></tr>`).join('');
+		const same = r.result.primary === (s.primary_category || 'none');
+		out.push(`<h3>카테고리별 합계</h3>
+			<table class="why why-grid">
+				<colgroup><col style="width:96px"><col style="width:72px"><col></colgroup>
+				<tbody>${srows || '<tr><td class="sub">점수가 매겨진 카테고리가 없습니다.</td></tr>'}</tbody>
+			</table>
+			<p class="sub">지금 규칙으로 다시 채점하면 →
+				<b>${escapeHtml(r.result.primary === 'none' ? '미분류' : r.result.primary)}</b>
+				${r.result.primary === 'none' ? '' : `(확신도 ${r.result.confidence})`}
+				${!same && s.label_source !== 'edit' ? ' <b>— 저장된 값과 다릅니다. 재분류가 필요합니다.</b>' : ''}</p>`);
+
+		return out.join('');
+	}
+
+	window.addRedirect = async function (idx, btn) {
+		const it = currentItems[idx];
+		const host = it.redirect.host;
+		if (!confirm(`${host} 을(를) 같은 순위로 목록에 추가하고 지금 수집할까요?`)) return;
+		btn.disabled = true;
+		btn.textContent = '수집 중...';
+		try {
+			const r = await api('/api/sites/add', {
+				method: 'POST',
+				body: JSON.stringify({ domain: host, source_domain: it.domain })
+			});
+			const kr = r.korean && r.korean.is_korean ? '한국어' : '한국어 아님';
+			const cat = (r.classification && r.classification.categories || []).join(', ') || '미분류';
+			toast(`${r.domain} 추가됨 (순위 ${nf.format(r.rank)}) — 수집 ${r.fetch.status} · ${kr} · ${cat}`);
+			load();
+		} catch (e) {
+			toast(e.message, true);
+			btn.disabled = false;
+			btn.textContent = '+ 추가';
+		}
+	};
+
+	window.requestLlm = async function (idx, on) {
+		const it = currentItems[idx];
+		const domain = it.domain;
+		// 수동 지정한 사이트는 사람 라벨이 우선이라 LLM 결과가 덮어쓰지 않는다
+		if (on && it.method === 'manual' &&
+			!confirm(`${domain} 은 수동으로 지정한 사이트입니다.\n` +
+				'LLM 결과는 참고용으로만 남고 지정한 카테고리를 덮어쓰지 않습니다. 요청할까요?')) {
+			return;
+		}
+		try {
+			if (on) {
+				const r = await api('/api/llm/request', {
+					method: 'POST', body: JSON.stringify({ domains: [domain] })
+				});
+				toast(`${domain} 요청됨 — 대기 ${nf.format(r.queued_total)}건. ` +
+					'진행 상황 화면의 "배치 내보내기"로 세션에 넘기세요.');
+			} else {
+				await api('/api/llm/request/' + encodeURIComponent(domain), { method: 'DELETE' });
+				toast(domain + ' 요청을 취소했습니다.');
+			}
+			load();
+		} catch (e) { toast(e.message, true); }
+	};
+
+	document.getElementById('bulk-llm').onclick = async () => {
+		const targets = currentItems.filter(i => !i.llm_requested && !i.llm_batch_id);
+		if (!targets.length) { toast('이 페이지는 이미 모두 요청되었습니다.'); return; }
+		if (!confirm(`이 페이지의 ${targets.length}건을 LLM 판정 대기열에 넣을까요?`)) return;
+		try {
+			const r = await api('/api/llm/request', {
+				method: 'POST', body: JSON.stringify({ domains: targets.map(i => i.domain) })
+			});
+			toast(`${nf.format(r.added)}건 요청됨 — 대기 ${nf.format(r.queued_total)}건`);
+			load();
+		} catch (e) { toast(e.message, true); }
+	};
+
+	window.setReview = async function (idx, status) {
+		try {
+			await api('/api/review', {
+				method: 'POST',
+				body: JSON.stringify({ domain: currentItems[idx].domain, status: status })
+			});
+			load();
+		} catch (e) { toast(e.message, true); }
+	};
+
+	async function bulk(status) {
+		if (!currentItems.length) return;
+		const label = status ? REVIEW_LABELS[status] : '미검수';
+		if (!confirm(`이 페이지의 ${currentItems.length}건을 '${label}'(으)로 바꿀까요?`)) return;
+		try {
+			const r = await api('/api/review/bulk', {
+				method: 'POST',
+				body: JSON.stringify({ domains: currentItems.map(i => i.domain), status: status })
+			});
+			toast(`${nf.format(r.updated)}건을 '${label}'로 변경했습니다.`);
+			load();
+		} catch (e) { toast(e.message, true); }
+	}
+
+	document.getElementById('bulk-reviewed').onclick = () => bulk('reviewed');
+	document.getElementById('bulk-excluded').onclick = () => bulk('excluded');
+	document.getElementById('bulk-clear').onclick = () => bulk(null);
+
+	const dialog = document.getElementById('edit-dialog');
+	let editing = null;
+
+	function selectedReview() {
+		const el = document.querySelector('#edit-review input:checked');
+		return el && el.value ? el.value : null;
+	}
+
+	function syncReasonBox() {
+		const reason = document.getElementById('edit-reason');
+		const excluded = selectedReview() === 'excluded';
+		reason.style.display = excluded ? '' : 'none';
+		if (!excluded) reason.value = '';
+	}
+
+	document.querySelectorAll('#edit-review input').forEach(el =>
+		el.addEventListener('change', syncReasonBox));
+
+	window.openEdit = function (idx) {
+		editing = currentItems[idx];
+		document.getElementById('edit-domain').textContent = editing.domain;
+		document.getElementById('edit-korean').checked = !!editing.is_korean;
+		document.getElementById('edit-note').value = editing.note || '';
+		document.getElementById('edit-title').value = editing.title || '';
+		document.getElementById('edit-title-origin').textContent = editing.title_edited
+			? '수집한 제목: ' + (editing.crawled_title || '(없음)')
+			: '크롤링으로 수집한 제목입니다.';
+		document.getElementById('edit-title-reset').disabled = !editing.title_edited;
+		document.getElementById('edit-reason').value = editing.review_reason || '';
+
+		const target = editing.review_status || '';
+		document.querySelectorAll('#edit-review input').forEach(el => {
+			el.checked = el.value === target;
+		});
+		syncReasonBox();
+
+		document.getElementById('edit-cats').innerHTML = CATEGORIES.map(c =>
+			`<label class="tag"><input type="checkbox" value="${escapeHtml(c)}"
+				${editing.categories.includes(c) ? 'checked' : ''}> ${escapeHtml(c)}</label>`).join('');
+		dialog.showModal();
+	};
+
+	document.getElementById('edit-title-reset').onclick = () => {
+		document.getElementById('edit-title').value = editing.crawled_title || '';
+	};
+
+	document.getElementById('edit-save').onclick = async () => {
+		const cats = Array.from(document.querySelectorAll('#edit-cats input:checked')).map(el => el.value);
+		const title = document.getElementById('edit-title').value.trim();
+		try {
+			await api('/api/labels', {
+				method: 'POST',
+				body: JSON.stringify({
+					domain: editing.domain,
+					categories: cats,
+					is_korean: document.getElementById('edit-korean').checked,
+					// 수집한 제목과 같으면 굳이 사람 수정본으로 저장하지 않는다
+					title: (title && title !== (editing.crawled_title || '')) ? title : null,
+					note: document.getElementById('edit-note').value.trim() || null
+				})
+			});
+			await api('/api/review', {
+				method: 'POST',
+				body: JSON.stringify({
+					domain: editing.domain,
+					status: selectedReview(),
+					reason: document.getElementById('edit-reason').value.trim() || null
+				})
+			});
+			dialog.close();
+			toast('저장되었습니다. 재분류해도 이 수정은 유지됩니다.');
+			load();
+		} catch (e) { toast(e.message, true); }
+	};
+
+	document.getElementById('edit-clear').onclick = async () => {
+		if (!confirm('이 사이트의 수동 수정(제목·카테고리·한국어 여부)을 모두 해제할까요?')) return;
+		try {
+			await api('/api/labels/' + encodeURIComponent(editing.domain), { method: 'DELETE' });
+			dialog.close();
+			toast('수동 수정을 해제했습니다.');
+			load();
+		} catch (e) { toast(e.message, true); }
+	};
+
+	document.getElementById('btn-search').onclick = () => { offset = 0; load(); };
+	document.getElementById('btn-prev').onclick = () => { offset = Math.max(0, offset - LIMIT); load(); };
+	document.getElementById('btn-next').onclick = () => { offset += LIMIT; load(); };
+	document.getElementById('f-q').addEventListener('keydown', e => {
+		if (e.key === 'Enter') { offset = 0; load(); }
+	});
+	['f-korean', 'f-category', 'f-method', 'f-review', 'f-redirect', 'f-blocked'].forEach(id =>
+		document.getElementById(id).addEventListener('change', () => { offset = 0; load(); }));
+
+	load();
+</script>
+{% endblock %}
