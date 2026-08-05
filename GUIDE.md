@@ -627,6 +627,65 @@ print('판정·분류 결과 초기화 (크롤링 데이터는 유지)')
 
 ---
 
+## 8-1. 릴리즈 — PCFILTER 로 넘길 데이터 만들기
+
+검수완료(`reviewed`)로 표시한 사이트만 모아 **버전 스냅샷**으로 고정하고,
+PCFILTER 제품의 `default_website_t` 형식으로 내보낸다.
+제외(`excluded`)는 들어가지 않는다. 설계는 [DATA_TIERS.md](DATA_TIERS.md).
+
+### 먼저 미리보기
+
+```bash
+./venv/bin/python run.py release-create v1.0.0 --dry-run
+```
+
+```
+[미리보기] 릴리즈 v1.0.0 — DB에 아무것도 쓰지 않았습니다
+  검수완료 대상   450건
+  그중 미분류     2건 → '기타'(10)
+  hash_id 충돌    0건
+  최종            450행
+```
+
+`--dry-run` 은 집계만 하고 아무것도 쓰지 않는다. 숫자를 먼저 보고 진행한다.
+
+**미분류**는 검수는 끝났는데 카테고리가 안 붙은 사이트다. `기타`(코드 10)로 들어간다.
+빼려면 `--skip-uncategorized` 를 붙인다.
+
+**hash_id 충돌**은 `www.example.com` 과 `example.com` 처럼 서로 다른 도메인이
+같은 해시를 만드는 경우다. `hash_id` 에 UNIQUE 가 걸려 있어 하나만 남긴다
+(`www.` 없는 쪽 → 상위 순위 → 사전순). 어느 것을 남기고 버렸는지 화면에 찍힌다.
+
+### 고정하고 내보내기
+
+```bash
+./venv/bin/python run.py release-create v1.0.0 --note "첫 릴리즈"
+./venv/bin/python run.py release-export v1.0.0
+./venv/bin/python run.py release-list
+```
+
+산출물 두 개가 나온다.
+
+| 파일 | 형식 |
+|---|---|
+| `out/release/v1.0.0/default_website_t.csv` | UTF-8 BOM + CRLF. Excel 에서 바로 열린다 |
+| `out/release/v1.0.0/default_website_t.sql` | `INSERT INTO public.default_website_t ...` |
+
+**`pno` 는 양쪽 모두에 넣지 않는다.** 대상 DB 에서 값이 달라질 수 있어서다.
+`block` 은 3, `flag` 는 `'0'` 고정이다.
+
+### 다시 만들기
+
+릴리즈는 고정(`fixed`)되면 그대로 둔다. 같은 버전을 다시 만들려면 `--replace` 가 필요하다.
+
+```bash
+./venv/bin/python run.py release-create v1.0.0 --replace
+```
+
+**기존 릴리즈 테이블을 지우고 새로 만든다.** 이미 PCFILTER 쪽에 넘긴 버전이라면
+덮어쓰지 말고 `v1.0.1` 로 새로 만드는 편이 낫다. 매 릴리즈는 전량 스냅샷이라
+버전이 늘어도 서로 간섭하지 않는다.
+
 ## 9. 명령어 레퍼런스
 
 | 명령 | 설명 | 웹 UI 대응 | 네트워크 | 소요 |
@@ -643,6 +702,10 @@ print('판정·분류 결과 초기화 (크롤링 데이터는 유지)')
 | `llm-status` | 배치 진행 상황 | 진행 상황 화면 | | 즉시 |
 | `export` | 최종 산출물 생성 | 전체 산출물 생성 | | 수십 초 |
 | `export --reviewed-only` | 검수완료분만 생성 | 검수완료분만 생성 | | 수십 초 |
+| `release-create <버전>` | 검수완료분을 버전 스냅샷으로 고정 | — | | 즉시 |
+| `release-create --dry-run` | 집계만, DB 안 건드림 | — | | 즉시 |
+| `release-export <버전>` | CSV + INSERT문 생성 | — | | 즉시 |
+| `release-list` | 릴리즈 목록 | — | | 즉시 |
 | `status` | 전체 진행 상황 요약 | 진행 상황 화면 | | 즉시 |
 | `web [--port N]` | 관리 UI 실행 | — | | — |
 

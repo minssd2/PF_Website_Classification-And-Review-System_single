@@ -14,6 +14,7 @@ from typing import Any, Dict, Iterable, List, Optional
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 DB_PATH = os.path.join(DATA_DIR, "sites.db")
+SCHEMA_PATH = os.path.join(PROJECT_ROOT, "schema", "schema.sql")
 
 REVIEW_STATUSES = ("reviewed", "excluded")
 REVIEW_LABELS = {"reviewed": "검수완료", "excluded": "제외"}
@@ -31,116 +32,16 @@ CATEGORIES = [
 	"생성형AI",
 ]
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS sites (
-	rank          INTEGER,
-	domain        TEXT PRIMARY KEY,
-	fetch_status  TEXT NOT NULL DEFAULT 'pending',
-	attempt_count INTEGER NOT NULL DEFAULT 0,
-	error         TEXT,
-	http_status   INTEGER,
-	final_url     TEXT,
-	charset       TEXT,
-	title         TEXT,
-	description   TEXT,
-	html_lang     TEXT,
-	og_locale     TEXT,
-	text_sample   TEXT,
-	fetched_at    TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_sites_status ON sites(fetch_status);
-CREATE INDEX IF NOT EXISTS idx_sites_rank   ON sites(rank);
+# 분류가 안 된 사이트를 릴리즈에 넣을 때 쓰는 이름. CATEGORIES 에는 넣지 않는다
+# (분류 규칙의 대상이 아니라 릴리즈 단계의 기본값이다).
+OTHER_CATEGORY = "기타"
 
-CREATE TABLE IF NOT EXISTS korean (
-	domain    TEXT PRIMARY KEY,
-	is_korean INTEGER NOT NULL DEFAULT 0,
-	score     REAL    NOT NULL DEFAULT 0,
-	reasons   TEXT,
-	judged_at TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_korean_flag ON korean(is_korean);
 
-CREATE TABLE IF NOT EXISTS classification (
-	domain           TEXT PRIMARY KEY,
-	categories       TEXT,
-	primary_category TEXT,
-	method           TEXT,
-	confidence       REAL,
-	evidence         TEXT,
-	classified_at    TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_cls_primary ON classification(primary_category);
-CREATE INDEX IF NOT EXISTS idx_cls_method  ON classification(method);
+def load_schema() -> str:
+	"""schema/schema.sql 을 읽는다. 이 파일이 스키마의 기준(source of truth)이다."""
+	with open(SCHEMA_PATH, "r", encoding="utf-8") as fp:
+		return fp.read()
 
-CREATE TABLE IF NOT EXISTS settings (
-	key         TEXT PRIMARY KEY,
-	value       TEXT,
-	value_type  TEXT NOT NULL DEFAULT 'str',
-	description TEXT
-);
-
-CREATE TABLE IF NOT EXISTS category_rules (
-	id         INTEGER PRIMARY KEY AUTOINCREMENT,
-	category   TEXT NOT NULL,
-	rule_type  TEXT NOT NULL,
-	pattern    TEXT NOT NULL,
-	weight     REAL NOT NULL DEFAULT 1.0,
-	enabled    INTEGER NOT NULL DEFAULT 1,
-	updated_at TEXT,
-	UNIQUE(category, rule_type, pattern)
-);
-CREATE INDEX IF NOT EXISTS idx_rules_cat ON category_rules(category);
-
--- 사람이 직접 고친 값. 재크롤링·재분류가 덮어쓰지 않는다
-CREATE TABLE IF NOT EXISTS manual_labels (
-	domain     TEXT PRIMARY KEY,
-	is_korean  INTEGER,
-	categories TEXT,
-	title      TEXT,
-	note       TEXT,
-	updated_at TEXT
-);
-
--- 사람이 최종 확인한 상태. 분류 라벨과 독립적이다
--- (라벨은 그대로 두고 "확인만 했다"거나 "결과에서 빼겠다"를 표시할 수 있어야 한다)
-CREATE TABLE IF NOT EXISTS review_status (
-	domain     TEXT PRIMARY KEY,
-	status     TEXT NOT NULL,          -- reviewed | excluded
-	reason     TEXT,
-	updated_at TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_review_status ON review_status(status);
-
-CREATE TABLE IF NOT EXISTS job_runs (
-	id         INTEGER PRIMARY KEY AUTOINCREMENT,
-	job_name   TEXT NOT NULL,
-	status     TEXT NOT NULL,
-	total      INTEGER NOT NULL DEFAULT 0,
-	processed  INTEGER NOT NULL DEFAULT 0,
-	ok_count   INTEGER NOT NULL DEFAULT 0,
-	fail_count INTEGER NOT NULL DEFAULT 0,
-	started_at TEXT,
-	updated_at TEXT,
-	message    TEXT
-);
-
-CREATE TABLE IF NOT EXISTS llm_batches (
-	batch_id     TEXT PRIMARY KEY,
-	status       TEXT NOT NULL,
-	size         INTEGER NOT NULL DEFAULT 0,
-	request_path TEXT,
-	result_path  TEXT,
-	exported_at  TEXT,
-	imported_at  TEXT
-);
-
-CREATE TABLE IF NOT EXISTS llm_queue (
-	domain    TEXT PRIMARY KEY,
-	batch_id  TEXT,
-	queued_at TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_queue_batch ON llm_queue(batch_id);
-"""
 
 # key -> (기본값, 타입, 설명). 웹 /settings 화면이 이 목록을 그대로 폼으로 그린다.
 DEFAULT_SETTINGS: List[tuple] = [
@@ -194,19 +95,33 @@ _ADDED_COLUMNS = [
 	("manual_labels", "source", "TEXT NOT NULL DEFAULT 'edit'"),
 	# 박제 직전의 분류 방식(rule/llm/unclassified). 화면에 원래 근거를 그대로 보여주려고 남긴다
 	("manual_labels", "origin_method", "TEXT"),
+	# v2 3계층: 이 도메인이 어느 소스데이터에서 전달됐는지.
+	# 기존 100만 행은 NULL 로 남고, top-1m 소급 등록 때 채운다.
+	("sites", "source_id", "INTEGER"),
+	("sites", "source_rank", "INTEGER"),
+	("sites", "added_at", "TEXT"),
 ]
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
 	for table, column, coltype in _ADDED_COLUMNS:
 		cols = {r["name"] for r in conn.execute("PRAGMA table_info(%s)" % table)}
+		if not cols:
+			continue  # 테이블 자체가 아직 없다. executescript 가 만들면서 컬럼도 넣는다
 		if column not in cols:
 			conn.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, column, coltype))
 	conn.commit()
 
 
 def init_schema(conn: sqlite3.Connection) -> None:
-	conn.executescript(SCHEMA)
+	"""스키마를 최신 상태로 맞춘다. 신규 DB 생성과 기존 DB 갱신을 모두 처리한다.
+
+	기존 DB 에서는 컬럼 추가가 먼저 와야 한다. schema.sql 에 새 컬럼을 참조하는
+	인덱스(idx_sites_source 등)가 들어 있어서, 컬럼이 없는 상태로 스크립트를 돌리면
+	거기서 죽는다. 신규 DB 에서는 테이블이 없어 _migrate 가 그냥 통과한다.
+	"""
+	_migrate(conn)
+	conn.executescript(load_schema())
 	conn.commit()
 	_migrate(conn)
 

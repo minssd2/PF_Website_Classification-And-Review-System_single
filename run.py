@@ -11,6 +11,9 @@
 	python run.py llm-export
 	python run.py llm-import llm/results/batch_0001.json
 	python run.py export
+	python run.py release-create v1.0.0 --dry-run
+	python run.py release-create v1.0.0
+	python run.py release-export v1.0.0
 	python run.py web
 """
 from __future__ import annotations
@@ -113,6 +116,65 @@ def cmd_mark_blocked(args: argparse.Namespace) -> None:
 def cmd_export(args: argparse.Namespace) -> None:
 	from src import export
 	export.run_export(reviewed_only=args.reviewed_only)
+
+
+def _print_release_summary(built: dict) -> None:
+	print("  검수완료 대상   {:,}건".format(built["candidates"]))
+	print("  그중 미분류     {:,}건 → '기타'(10)".format(built["uncategorized"]))
+	if built["skipped_uncategorized"]:
+		print("    ↳ --skip-uncategorized 로 {:,}건 제외".format(built["skipped_uncategorized"]))
+	collisions = built["collisions"]
+	print("  hash_id 충돌    {:,}건".format(len(collisions)))
+	for c in collisions[:10]:
+		print("    {} 남김 / {} 버림".format(c["kept"], ", ".join(c["dropped"])))
+	if len(collisions) > 10:
+		print("    ... 외 {:,}건".format(len(collisions) - 10))
+	print("  최종            {:,}행".format(len(built["rows"])))
+
+
+def cmd_release_create(args: argparse.Namespace) -> None:
+	from src import db as _db, release
+
+	if args.dry_run:
+		conn = _db.connect()
+		try:
+			_db.init_schema(conn)
+			built = release.build_rows(conn, skip_uncategorized=args.skip_uncategorized)
+		finally:
+			conn.close()
+		print("[미리보기] 릴리즈 %s — DB에 아무것도 쓰지 않았습니다" % args.version)
+		_print_release_summary(built)
+		return
+
+	built = release.create(
+		args.version, note=args.note,
+		skip_uncategorized=args.skip_uncategorized, replace=args.replace)
+	print("릴리즈 %s 생성 완료 → 테이블 %s" % (built["version"], built["table"]))
+	_print_release_summary(built)
+	print("\n내보내기: python run.py release-export %s" % args.version)
+
+
+def cmd_release_list(args: argparse.Namespace) -> None:
+	from src import release
+
+	rows = release.list_releases()
+	if not rows:
+		print("릴리즈가 없습니다. `run.py release-create v1.0.0` 으로 만드세요.")
+		return
+	print("{:<12} {:<8} {:>8}  {:<19} {}".format("버전", "상태", "행수", "고정시각", "메모"))
+	for r in rows:
+		print("{:<12} {:<8} {:>8,}  {:<19} {}".format(
+			r["version"], r["status"], r["row_count"],
+			r["fixed_at"] or "-", r["note"] or ""))
+
+
+def cmd_release_export(args: argparse.Namespace) -> None:
+	from src import db as _db, release
+
+	result = release.export(args.version)
+	print("릴리즈 {} 내보내기 완료 ({:,}행)".format(result["version"], result["count"]))
+	for path in (result["csv"], result["sql"]):
+		print("  %s" % os.path.relpath(path, _db.PROJECT_ROOT))
 
 
 def cmd_status(args: argparse.Namespace) -> None:
@@ -246,6 +308,22 @@ def main() -> None:
 	p.add_argument("--reviewed-only", action="store_true",
 	               help="검수완료로 표시한 사이트만 out/reviewed/ 에 생성")
 	p.set_defaults(func=cmd_export)
+
+	p = sub.add_parser("release-create", help="검수완료분을 버전 스냅샷으로 고정")
+	p.add_argument("version", help="버전 이름 (예: v1.0.0)")
+	p.add_argument("--note", help="메모")
+	p.add_argument("--skip-uncategorized", action="store_true",
+	               help="분류가 없는 검수완료분을 빼기 (기본: '기타'로 포함)")
+	p.add_argument("--replace", action="store_true", help="같은 버전이 있으면 덮어쓰기")
+	p.add_argument("--dry-run", action="store_true", help="집계만 하고 DB에 쓰지 않기")
+	p.set_defaults(func=cmd_release_create)
+
+	p = sub.add_parser("release-list", help="릴리즈 목록")
+	p.set_defaults(func=cmd_release_list)
+
+	p = sub.add_parser("release-export", help="릴리즈를 CSV + INSERT문으로 내보내기")
+	p.add_argument("version", help="버전 이름 (예: v1.0.0)")
+	p.set_defaults(func=cmd_release_export)
 
 	p = sub.add_parser("status", help="전체 진행 상황 요약")
 	p.set_defaults(func=cmd_status)

@@ -44,6 +44,12 @@ python3 -m venv venv
 ./venv/bin/python run.py export                  # out/ — 전체
 ./venv/bin/python run.py export --reviewed-only  # out/reviewed/ — 검수완료분만
 
+# 6. 릴리즈 — 검수완료분을 버전으로 고정하고 PCFILTER 형식으로 내보낸다
+./venv/bin/python run.py release-create v1.0.0 --dry-run   # 집계만, DB 안 건드림
+./venv/bin/python run.py release-create v1.0.0
+./venv/bin/python run.py release-export v1.0.0   # out/release/v1.0.0/ — CSV + INSERT문
+./venv/bin/python run.py release-list
+
 # 언제든지
 ./venv/bin/python run.py status             # 진행 상황 요약
 ./venv/bin/python run.py web                # 관리 UI → http://127.0.0.1:8000

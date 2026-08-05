@@ -43,8 +43,11 @@ CREATE TABLE IF NOT EXISTS sites (
 	text_sample   TEXT,                             -- 본문 발췌. compact 명령이 비한국어분을 지운다
 	fetched_at    TEXT,
 
-	-- v2 확장: 어느 소스데이터에서 전달됐는지
-	source_id     INTEGER REFERENCES source_datasets(id),
+	-- v2 확장: 어느 소스데이터에서 전달됐는지.
+	-- FK 를 걸지 않는다. 기존 DB 는 ALTER TABLE ADD COLUMN 으로 채우는데
+	-- 그러면 신규 DB 와 모양이 달라지고, 소스를 지웠을 때 sites 입력이 막힌다.
+	-- 무결성은 source_datasets 카탈로그를 단일 진입점으로 강제해서 지킨다.
+	source_id     INTEGER,
 	source_rank   INTEGER,                          -- 소스 기준 순위 (rank 대체)
 	added_at      TEXT                              -- 작업데이터에 들어온 시각
 );
