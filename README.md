@@ -11,7 +11,9 @@ tranco 상위 100만 사이트에서 **① 한국어 서비스를 하는 사이�
 > **문서 안내**
 > - 이 문서 — 설계와 구조
 > - [GUIDE.md](GUIDE.md) — 실제로 돌리는 절차 (서비스 실행 가이드)
+> - [DATA_TIERS.md](DATA_TIERS.md) — 소스/작업/릴리즈 3계층 설계 + PCFILTER 연동 (v2)
 > - [PLAN.md](PLAN.md) — 착수 시점 계획 원문 + 구현하며 달라진 부분
+> - [schema/schema.sql](schema/schema.sql) — DB INIT 스키마 정의
 
 ## 준비
 
@@ -113,6 +115,24 @@ API를 쓰지 않고, 콘솔에 열어둔 Claude Code 세션과 **파일로 주�
 `제외` 로 표시한 사이트는 산출물에서 빠지고 `excluded_sites.csv` 에만 남는다.
 `--reviewed-only` 로 내보내면 `검수완료` 로 표시한 사이트만 `out/reviewed/` 에 담긴다.
 
+## 데이터 3계층 (v2, 설계 완료·구현 예정)
+
+수집 대상을 늘리고 결과를 PCFILTER 제품에 넘기기 위해 데이터를 세 계층으로 나눈다.
+
+```
+소스데이터            작업데이터                    릴리즈데이터
+(업로드 원본)   →     (수집·판정·검수)      →      (검수완료 스냅샷)
+소스별 테이블         단일 작업공간                 버전별 테이블
+자유 스키마           기존 파이프라인 그대로        PCFILTER 스키마 고정
+```
+
+- **소스데이터** — 업로드한 CSV 원본. `top-1m.csv` 가 첫 사례다. 업로드마다 테이블 하나
+- **작업데이터** — 지금의 `sites`·`korean`·`classification`·`review_status`. 하나뿐이다
+- **릴리즈데이터** — 검수완료분을 버전으로 고정한 스냅샷. PCFILTER `default_website_t` 스키마
+
+소스에서 작업데이터로 전달할 때 **이미 검수완료·제외한 도메인은 자동으로 빠진다.**
+설계 전문은 [DATA_TIERS.md](DATA_TIERS.md).
+
 ## 구조
 
 ```
@@ -126,6 +146,7 @@ src/classify_rule.py    규칙 분류
 src/llm_batch.py        세션 판정 배치 export/import
 src/export.py           최종 산출물
 web/                    FastAPI 관리 UI
+schema/schema.sql       DB INIT 스키마 정의
 seed/                   규칙 초기값 (주입 후에는 DB가 기준)
 data/sites.db           모든 상태
 llm/requests, llm/results
