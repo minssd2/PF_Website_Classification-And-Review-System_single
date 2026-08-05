@@ -116,6 +116,7 @@
 			<td class="row">
 				<button data-rows="${escapeHtml(r.version)}">내용</button>
 				<button data-export="${escapeHtml(r.version)}" class="primary">내보내기</button>
+				<button data-delete="${escapeHtml(r.version)}" class="danger">삭제</button>
 			</td>
 		</tr>`;
 	}
@@ -142,6 +143,32 @@
 					 <td class="sub">${escapeHtml(x.method || '')}</td></tr>`).join('');
 				document.getElementById('rows-card').style.display = '';
 			} catch (e) { toast(e.message, true); }
+		});
+
+		document.querySelectorAll('[data-delete]').forEach(b => b.onclick = async () => {
+			const version = b.dataset.delete;
+			// 되돌릴 수 없는 작업이라 버전 이름을 직접 입력받는다. confirm 한 번으로는 약하다
+			const typed = prompt(
+				`릴리즈 ${version} 을 삭제합니다. 되돌릴 수 없습니다.\n` +
+				`검수 데이터는 그대로 두고 이 스냅샷만 지웁니다.\n\n` +
+				`계속하려면 버전 이름을 그대로 입력하세요.`);
+			if (typed === null) return;
+			if (typed.trim() !== version) { toast('입력이 달라 취소했습니다.', true); return; }
+			const withFiles = confirm(
+				`내보낸 CSV/SQL 파일도 함께 지울까요?\n\n` +
+				`확인 = 파일도 삭제 / 취소 = 파일은 그대로 두고 DB 에서만 삭제`);
+			b.disabled = true;
+			try {
+				const d = await api(
+					'/api/releases/' + encodeURIComponent(version) +
+					'?confirm=' + encodeURIComponent(version) + '&with_files=' + withFiles,
+					{ method: 'DELETE' });
+				toast(`릴리즈 ${d.version} 삭제 완료 (${nf.format(d.count)}행)` +
+					(d.out_dir ? ` — 파일은 ${d.out_dir} 에 남아 있습니다` : ''));
+				document.getElementById('rows-card').style.display = 'none';
+				load();
+			} catch (e) { toast(e.message, true); }
+			finally { b.disabled = false; }
 		});
 
 		document.querySelectorAll('[data-export]').forEach(b => b.onclick = async () => {

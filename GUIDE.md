@@ -736,6 +736,26 @@ PCFILTER 제품의 `default_website_t` 형식으로 내보낸다.
 덮어쓰지 말고 `v1.0.1` 로 새로 만드는 편이 낫다. 매 릴리즈는 전량 스냅샷이라
 버전이 늘어도 서로 간섭하지 않는다.
 
+### 삭제
+
+릴리즈 화면의 **삭제** 버튼, 또는 콘솔에서:
+
+```bash
+./venv/bin/python run.py release-delete v1.0.0                # 확인 입력을 받는다
+./venv/bin/python run.py release-delete v1.0.0 --with-files   # 내보낸 파일도 삭제
+./venv/bin/python run.py release-delete v1.0.0 --yes          # 확인 생략
+```
+
+**되돌릴 수 없다.** 그래서 웹과 콘솔 모두 **버전 이름을 그대로 다시 입력**해야 진행된다.
+확인 창 한 번으로는 통과하지 않는다.
+
+지우는 것은 그 버전의 스냅샷 테이블(`release_v1_0_0`, `release_v1_0_0_map`)과
+목록의 한 줄뿐이다. **검수 데이터·작업데이터·소스데이터는 건드리지 않는다.**
+같은 버전 이름으로 다시 만들 수 있다.
+
+내보낸 CSV/SQL 파일은 기본적으로 `out/release/{버전}/` 에 그대로 남는다.
+파일까지 지우려면 웹에서는 두 번째 확인 창에서 **확인**, 콘솔에서는 `--with-files` 를 쓴다.
+
 ## 9. 명령어 레퍼런스
 
 | 명령 | 설명 | 웹 UI 대응 | 네트워크 | 소요 |
@@ -759,6 +779,7 @@ PCFILTER 제품의 `default_website_t` 형식으로 내보낸다.
 | `release-create <버전>` | 검수완료분을 버전 스냅샷으로 고정 | 고정 | | 즉시 |
 | `release-create --dry-run` | 집계만, DB 안 건드림 | 미리보기 | | 즉시 |
 | `release-export <버전>` | CSV + INSERT문 생성 | 내보내기 | | 즉시 |
+| `release-delete <버전>` | 릴리즈 삭제 (되돌릴 수 없음) | 삭제 | | 즉시 |
 | `release-list` | 릴리즈 목록 | 릴리즈 화면 | | 즉시 |
 | `status` | 전체 진행 상황 요약 | 진행 상황 화면 | | 즉시 |
 | `web [--port N]` | 관리 UI 실행 | — | | — |

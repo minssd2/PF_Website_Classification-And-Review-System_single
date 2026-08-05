@@ -320,6 +320,52 @@ def _release_row(conn: sqlite3.Connection, version: str) -> sqlite3.Row:
 	return row
 
 
+def delete(version: str, with_files: bool = False) -> Dict[str, Any]:
+	"""릴리즈를 지운다. 되돌릴 수 없다.
+
+	카탈로그에 등록된 테이블만 지운다. `releases.table_name` 을 거치지 않은 이름은
+	받지 않는다. 내보낸 파일은 기본적으로 두고, with_files=True 일 때만 지운다.
+	검수 데이터(review_status·manual_labels)는 절대 건드리지 않는다.
+	"""
+	conn = db.connect()
+	try:
+		db.init_schema(conn)
+		rel = _release_row(conn, version)
+		table = rel["table_name"]
+
+		# 카탈로그를 통해 얻은 이름인지 한 번 더 확인한다. 동적 DROP 이라 안전장치를 둔다
+		if not re.fullmatch(r"release_[0-9a-z_]+", table or ""):
+			raise ValueError("릴리즈 테이블 이름이 이상합니다: %r" % table)
+
+		count = rel["row_count"]
+		conn.executescript(
+			"DROP TABLE IF EXISTS {t}_map; DROP TABLE IF EXISTS {t};".format(t=table))
+		conn.execute("DELETE FROM releases WHERE version = ?", (version,))
+		conn.commit()
+
+		out_dir = os.path.join(RELEASE_DIR, version)
+		removed_files = []
+		if os.path.isdir(out_dir):
+			if with_files:
+				for name in sorted(os.listdir(out_dir)):
+					path = os.path.join(out_dir, name)
+					if os.path.isfile(path):
+						os.remove(path)
+						removed_files.append(name)
+				try:
+					os.rmdir(out_dir)
+				except OSError:
+					pass  # 우리가 만들지 않은 파일이 남아 있으면 폴더는 둔다
+			else:
+				removed_files = None  # 파일은 그대로 뒀다는 표시
+
+		return {"version": version, "table": table, "count": count,
+		        "out_dir": out_dir if os.path.isdir(out_dir) else None,
+		        "removed_files": removed_files}
+	finally:
+		conn.close()
+
+
 # ---------------------------------------------------------------- 내보내기
 
 def _sql_literal(value: Any) -> str:

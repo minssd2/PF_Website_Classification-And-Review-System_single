@@ -1197,6 +1197,24 @@ def api_release_rows(version: str, limit: int = Query(50, le=500), offset: int =
 	return {"total": rel["row_count"], "rows": [dict(r) for r in rows]}
 
 
+@app.delete("/api/releases/{version}")
+def api_release_delete(version: str, confirm: str = Query(...), with_files: bool = False):
+	"""릴리즈 삭제. 되돌릴 수 없어 버전 이름을 그대로 다시 받는다."""
+	from src import release
+
+	if confirm != version:
+		raise HTTPException(400, "확인 문자열이 버전 이름과 다릅니다.")
+	if _busy():
+		raise HTTPException(409, "다른 작업이 실행 중입니다. 끝난 뒤에 다시 시도하세요.")
+	try:
+		r = release.delete(version, with_files=with_files)
+	except ValueError as exc:
+		raise HTTPException(404, str(exc))
+	return {"version": r["version"], "count": r["count"],
+	        "removed_files": r["removed_files"],
+	        "out_dir": os.path.relpath(r["out_dir"], db.PROJECT_ROOT) if r["out_dir"] else None}
+
+
 @app.post("/api/releases/{version}/export")
 def api_release_export(version: str):
 	from src import release

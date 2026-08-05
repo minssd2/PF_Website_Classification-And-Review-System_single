@@ -262,6 +262,37 @@ def cmd_release_export(args: argparse.Namespace) -> None:
 		print("  %s" % os.path.relpath(path, _db.PROJECT_ROOT))
 
 
+def cmd_release_delete(args: argparse.Namespace) -> None:
+	from src import db as _db, release
+
+	rows = [r for r in release.list_releases() if r["version"] == args.version]
+	if not rows:
+		print("그런 릴리즈가 없습니다: %s" % args.version)
+		sys.exit(1)
+	rel = rows[0]
+
+	print("삭제 대상")
+	print("  버전   %s (%s)" % (rel["version"], rel["status"]))
+	print("  테이블 %s / %s행" % (rel["table_name"], format(rel["row_count"], ",")))
+	print("  고정   %s" % (rel["fixed_at"] or "-"))
+	print("  내보낸 파일은 %s" % ("함께 지웁니다" if args.with_files else "그대로 둡니다"))
+	print("\n되돌릴 수 없습니다. 검수 데이터는 건드리지 않습니다.")
+
+	if not args.yes:
+		typed = input("버전 이름을 그대로 입력하세요 (%s): " % args.version).strip()
+		if typed != args.version:
+			print("입력이 달라 취소했습니다.")
+			sys.exit(1)
+
+	r = release.delete(args.version, with_files=args.with_files)
+	print("\n릴리즈 %s 삭제 완료 (%s행)" % (r["version"], format(r["count"], ",")))
+	if r["removed_files"] is None and r["out_dir"]:
+		print("  내보낸 파일은 남아 있습니다: %s"
+		      % os.path.relpath(r["out_dir"], _db.PROJECT_ROOT))
+	elif r["removed_files"]:
+		print("  파일 %d개 삭제" % len(r["removed_files"]))
+
+
 def cmd_status(args: argparse.Namespace) -> None:
 	conn = db.connect()
 	try:
@@ -432,6 +463,13 @@ def main() -> None:
 	p = sub.add_parser("release-export", help="릴리즈를 CSV + INSERT문으로 내보내기")
 	p.add_argument("version", help="버전 이름 (예: v1.0.0)")
 	p.set_defaults(func=cmd_release_export)
+
+	p = sub.add_parser("release-delete", help="릴리즈 삭제 (되돌릴 수 없음)")
+	p.add_argument("version", help="버전 이름 (예: v1.0.0)")
+	p.add_argument("--with-files", action="store_true",
+	               help="내보낸 CSV/SQL 파일도 함께 삭제")
+	p.add_argument("--yes", action="store_true", help="확인 입력 생략")
+	p.set_defaults(func=cmd_release_delete)
 
 	p = sub.add_parser("status", help="전체 진행 상황 요약")
 	p.set_defaults(func=cmd_status)

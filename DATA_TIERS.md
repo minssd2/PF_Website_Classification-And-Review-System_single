@@ -315,7 +315,20 @@ run.py source-push <id> [--dry-run]                # 작업데이터로 전달
 run.py release-create v1.0.0 [--dry-run] [--skip-uncategorized] [--replace]
 run.py release-list
 run.py release-export v1.0.0                       # CSV + SQL 동시 생성
+run.py release-delete v1.0.0 [--with-files] [--yes]
 ```
+
+### 릴리즈 삭제
+
+되돌릴 수 없으므로 웹·콘솔 모두 **버전 이름을 그대로 다시 입력**받는다. 확인 창
+한 번은 이 정도 작업에 약한 장치다.
+
+지우는 범위는 그 버전의 `release_*` / `release_*_map` 테이블과 `releases` 의 한 줄뿐이다.
+검수·작업·소스 데이터는 건드리지 않는다. 내보낸 파일은 기본적으로 남기고,
+`--with-files` 일 때만 지운다.
+
+테이블 이름은 `releases` 카탈로그에서만 얻고, `release_[0-9a-z_]+` 형태인지 한 번 더
+검사한 뒤 DROP 한다. 동적 DDL 이라 안전장치를 이중으로 둔다.
 
 테이블 이름은 `src_%04d_{슬러그}` 다. 한글 이름은 슬러그에서 다 깎이므로 알파벳이
 하나도 안 남으면 `data` 로 떨어진다 (`src_0002_data`).
